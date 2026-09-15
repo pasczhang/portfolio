@@ -7,6 +7,7 @@ import type {
   TenorDistribution,
   YieldCurveShock,
 } from "@/lib/desk-types";
+import type { CashLadderRow, WorkbenchSnapshot } from "@/types/workbench";
 
 const asOf = "2026-09-10";
 
@@ -289,3 +290,73 @@ export const MOCK_TRADES: BlotterTrade[] = [
   { id: "TRD-1001", trade_time: "2026-09-08T10:15:00Z", trade_type: "DEPOSIT", counterparty: "Standard Chartered", amount: 8000000, rate: 0.0435, maturity_date: "2026-09-17", trader: "Amy Chen", status: "SETTLED" },
   { id: "TRD-1000", trade_time: "2026-09-10T09:15:00Z", trade_type: "BUY", counterparty: "HSBC", amount: 12000000, rate: 0.041, maturity_date: "2026-09-11", trader: "Amy Chen", status: "BOOKED" },
 ];
+
+function mockCashLadder(start: string): CashLadderRow[] {
+  const rows: CashLadderRow[] = [];
+  let cash = 25_000_000;
+  const flows: Record<number, { sub: number; red: number; prin: number; fx: number }> = {
+    2: { sub: 2_500_000, red: 0, prin: 0, fx: 0 },
+    3: { sub: 0, red: 1_800_000, prin: 0, fx: 0 },
+    4: { sub: 0, red: 0, prin: 12_000_000, fx: 0 },
+    5: { sub: 0, red: 0, prin: 0, fx: -350_000 },
+    7: { sub: 0, red: 0, prin: 8_001_200, fx: 0 },
+    9: { sub: 2_500_000, red: 0, prin: 0, fx: 0 },
+    14: { sub: 0, red: 0, prin: 6_988_000, fx: 0 },
+  };
+  for (let offset = 0; offset <= 21; offset += 1) {
+    const d = new Date(`${start}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + offset);
+    const f = flows[offset] ?? { sub: 0, red: 0, prin: 0, fx: 0 };
+    const interest = offset % 7 === 6 || offset % 7 === 0 ? 0 : 9_800;
+    const net = f.sub - f.red + f.prin + interest + f.fx;
+    cash += net;
+    rows.push({
+      date: d.toISOString().slice(0, 10),
+      tenor: `T+${offset}`,
+      subscription_inflow: f.sub,
+      redemption_outflow: f.red,
+      principal_maturity: f.prin,
+      interest_income: interest,
+      fx_hedge_flow: f.fx,
+      closing_cash: cash,
+      net_flow: net,
+    });
+  }
+  return rows;
+}
+
+export const MOCK_WORKBENCH: WorkbenchSnapshot = {
+  as_of: asOf,
+  fund_code: "BAM-USD-MMF",
+  aum: 104_917_400,
+  official_nav: 1,
+  shadow_nav: 1.0004,
+  deviation_bps: 4.1,
+  deviation_status: "OK",
+  wam_days: 18.4,
+  wal_days: 28.9,
+  dla_pct: 35.2,
+  wla_pct: 62.1,
+  wam_limit: 60,
+  wal_limit: 120,
+  dla_floor: 10,
+  wla_floor: 20,
+  cash_ladder: mockCashLadder(asOf),
+  positions: MOCK_HOLDINGS.holdings.map((h) => ({
+    security_id: h.security_id,
+    book_value: h.amortized_cost,
+    coupon_type: h.product_type === "NCD" && h.security_id.includes("FRN") ? "floating" : "fixed",
+    maturity_date: h.maturity_date,
+    rate_reset_date: h.security_id.includes("FRN") ? "2026-09-17" : null,
+    asset_class: h.product_type,
+    is_sovereign: h.counterparty === "US Treasury" || h.counterparty === "HKMA",
+    settlement_lag_business_days: 0,
+    pledged_ratio: 0,
+    issuer_id: h.counterparty,
+    issuer_name: h.counterparty,
+    coupon_rate: h.coupon_rate_pct / 100,
+    shadow_mtm: h.shadow_mtm,
+  })),
+  cash: [{ amount: 25_000_000, available_on: asOf, is_overnight_deposit: true }],
+  updated_at: `${asOf}T09:30:00+08:00`,
+};

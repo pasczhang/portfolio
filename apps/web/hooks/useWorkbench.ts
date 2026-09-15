@@ -1,11 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiGet, apiPost } from "@/lib/api";
+import { apiGetOr, apiPost } from "@/lib/api";
+import { MOCK_WORKBENCH } from "@/lib/mocks";
 import { buildEngineTrade, localWhatIf } from "@/lib/whatIf";
 import type { PreTradeWhatIfResult, WhatIfForm, WorkbenchSnapshot } from "@/types/workbench";
 
 const POLL_MS = 15_000;
+
+function canUseRealtime(): boolean {
+  if (process.env.NEXT_PUBLIC_WS_URL) return true;
+  if (typeof window === "undefined") return false;
+  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+}
 
 function wsUrl(): string {
   if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
@@ -15,6 +22,7 @@ function wsUrl(): string {
 
 export function useWorkbench() {
   const [data, setData] = useState<WorkbenchSnapshot | null>(null);
+  const [source, setSource] = useState<"api" | "mock">("mock");
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState<"ws" | "poll" | "idle">("idle");
   const [whatIf, setWhatIf] = useState<PreTradeWhatIfResult | null>(null);
@@ -24,41 +32,62 @@ export function useWorkbench() {
   const [toast, setToast] = useState<string | null>(null);
   const seq = useRef(0);
   const debounce = useRef<number | null>(null);
+  const sourceRef = useRef<"api" | "mock">("mock");
 
   const load = useCallback(async () => {
-    const snap = await apiGet<WorkbenchSnapshot>("/dashboard/workbench");
-    setData(snap);
+    const res = await apiGetOr<WorkbenchSnapshot>("/dashboard/workbench", MOCK_WORKBENCH);
+    sourceRef.current = res.source;
+    setSource(res.source);
+    setData(res.data);
     setError(null);
+    return res.source;
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    setLive("poll");
-    void load().catch((err: Error) => {
-      if (!cancelled) setError(err.message);
-    });
-    const pollId = window.setInterval(() => {
-      void load().catch((err: Error) => setError(err.message));
-    }, POLL_MS);
-
+    let pollId = 0;
     let ws: WebSocket | null = null;
-    try {
-      ws = new WebSocket(wsUrl());
-      ws.onopen = () => {
-        if (!cancelled) setLive("ws");
-      };
-      ws.onmessage = (event) => {
+
+    void load()
+      .then((src) => {
         if (cancelled) return;
-        setData(JSON.parse(event.data) as WorkbenchSnapshot);
-        setError(null);
-        setLive("ws");
-      };
-      ws.onerror = () => {
-        if (!cancelled) setLive("poll");
-      };
-    } catch {
-      setLive("poll");
-    }
+        if (src !== "api") {
+          setLive("idle");
+          return;
+        }
+        setLive("poll");
+        pollId = window.setInterval(() => {
+          void load();
+        }, POLL_MS);
+
+        if (!canUseRealtime()) return;
+        try {
+          ws = new WebSocket(wsUrl());
+          ws.onopen = () => {
+            if (!cancelled) setLive("ws");
+          };
+          ws.onmessage = (event) => {
+            if (cancelled) return;
+            setData(JSON.parse(event.data) as WorkbenchSnapshot);
+            setError(null);
+            setSource("api");
+            sourceRef.current = "api";
+            setLive("ws");
+          };
+          ws.onerror = () => {
+            if (!cancelled) setLive("poll");
+          };
+        } catch {
+          setLive("poll");
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setData(MOCK_WORKBENCH);
+          setSource("mock");
+          setError(err.message);
+        }
+      });
 
     return () => {
       cancelled = true;
@@ -73,6 +102,10 @@ export function useWorkbench() {
       setWhatIfBusy(true);
       setWhatIfError(null);
       if (data) setWhatIf(localWhatIf(data, form));
+      if (sourceRef.current !== "api") {
+        if (ticket === seq.current) setWhatIfBusy(false);
+        return;
+      }
       try {
         const result = await apiPost<PreTradeWhatIfResult>("/simulation/pre-trade", {
           snapshot: data
@@ -105,6 +138,16 @@ export function useWorkbench() {
     async (form: WhatIfForm) => {
       setCommitting(true);
       setWhatIfError(null);
+      if (sourceRef.current !== "api") {
+        if (data) {
+          const result = localWhatIf(data, form);
+          setWhatIf(result);
+        }
+        setToast("演示模式：试算结果已计算（静态站点未连接交易引擎）");
+        window.setTimeout(() => setToast(null), 4000);
+        setCommitting(false);
+        return true;
+      }
       try {
         await apiPost("/simulation/pre-trade/commit", {
           trade: buildEngineTrade(form, data?.as_of),
@@ -126,6 +169,7 @@ export function useWorkbench() {
 
   return {
     data,
+    source,
     error,
     live,
     load,
