@@ -1,0 +1,10 @@
+name = "portfolio"
+compatibility_date = "2025-09-15"
+
+[build]
+command = "npm --prefix apps/web install && npm --prefix apps/web run build:cf"
+
+[assets]
+directory = "./apps/web/out"
+not_found_handling = "404-page"
+html_handling = "auto-trailing-slash"

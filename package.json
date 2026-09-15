@@ -6,7 +6,12 @@
   "scripts": {
     "dev:web": "pnpm --filter @mmf-pms/web dev",
     "build:web": "pnpm --filter @mmf-pms/web build",
-    "lint:web": "pnpm --filter @mmf-pms/web lint"
+    "build:cf": "npm --prefix apps/web run build:cf",
+    "lint:web": "pnpm --filter @mmf-pms/web lint",
+    "deploy": "npm run build:cf && wrangler deploy -c wrangler.toml"
+  },
+  "devDependencies": {
+    "wrangler": "^4.131.2"
   },
   "packageManager": "pnpm@9.12.0",
   "engines": {

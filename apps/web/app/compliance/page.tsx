@@ -49,7 +49,7 @@ export default function CompliancePage() {
                 <span>
                   <span className="font-medium">{row.issuer}</span>
                   <span className="ml-2 font-mono text-[hsl(var(--muted-foreground))]">
-                    {row.product_hint} · {usd(row.amount)}
+                    {row.product_hint} · {money(row.amount, fund.ccy)}
                   </span>
                 </span>
                 <span className="flex items-center gap-2">

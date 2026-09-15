@@ -70,7 +70,7 @@ export default function AnalyticsPage() {
               <CartesianGrid stroke="#1e2a3f" />
               <XAxis dataKey="bucket" stroke="#94a3b8" tick={{ fontSize: 11 }} />
               <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} />
-              <Tooltip {...tooltip} formatter={(v: number) => [`${v.toFixed(2)}m`, "摊余成本"]} />
+              <Tooltip {...tooltip} formatter={(v) => [`${Number(v ?? 0).toFixed(2)}m`, "摊余成本"]} />
               <Bar dataKey="amount" name="摊余成本 (USD m)" fill="#f59e0b" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>

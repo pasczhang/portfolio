@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiGetOr } from "@/lib/api";
 
-export function useApiOr<T>(path: string, fallback: T, reloadKey = 0) {
+export function useApiOr<T>(path: string, fallback: T, reloadKey: string | number = 0) {
   const [data, setData] = useState<T>(fallback);
   const [source, setSource] = useState<"api" | "mock">("mock");
   const [loading, setLoading] = useState(true);
