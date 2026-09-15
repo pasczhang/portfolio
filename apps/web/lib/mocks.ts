@@ -354,7 +354,7 @@ export const MOCK_WORKBENCH: WorkbenchSnapshot = {
     pledged_ratio: 0,
     issuer_id: h.counterparty,
     issuer_name: h.counterparty,
-    coupon_rate: h.coupon_rate_pct / 100,
+    coupon_rate: Number(h.coupon_rate_pct) / 100,
     shadow_mtm: h.shadow_mtm,
   })),
   cash: [{ amount: 25_000_000, available_on: asOf, is_overnight_deposit: true }],
