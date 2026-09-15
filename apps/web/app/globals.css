@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 20% 96%;
+  --foreground: 222 47% 8%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 8%;
+  --muted: 210 16% 93%;
+  --muted-foreground: 215 14% 40%;
+  --primary: 221 70% 42%;
+  --primary-foreground: 0 0% 100%;
+  --border: 214 18% 84%;
+}
+
+.dark {
+  --background: 222 47% 6%;
+  --foreground: 210 20% 96%;
+  --card: 222 42% 9%;
+  --card-foreground: 210 20% 96%;
+  --muted: 217 32% 14%;
+  --muted-foreground: 215 16% 65%;
+  --primary: 38 92% 50%;
+  --primary-foreground: 24 10% 8%;
+  --border: 217 28% 18%;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+  font-family: "Segoe UI", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+.ag-theme-quartz,
+.ag-theme-quartz-dark {
+  --ag-font-size: 12px;
+  --ag-row-height: 34px;
+  --ag-font-family: ui-monospace, "IBM Plex Mono", "Cascadia Mono", "Segoe UI", monospace;
+}
+
+.ag-theme-quartz-dark {
+  --ag-background-color: hsl(222 42% 9%);
+  --ag-odd-row-background-color: hsl(222 38% 11%);
+  --ag-header-background-color: hsl(217 32% 12%);
+  --ag-foreground-color: hsl(210 20% 96%);
+  --ag-header-foreground-color: hsl(215 16% 72%);
+  --ag-border-color: hsl(217 28% 18%);
+  --ag-row-hover-color: hsl(217 32% 16%);
+  --ag-selected-row-background-color: hsl(38 92% 50% / 0.12);
+}
+
+.ag-theme-quartz-dark .ag-root-wrapper,
+.ag-theme-quartz-dark .ag-center-cols-viewport,
+.ag-theme-quartz-dark .ag-body-viewport,
+.ag-theme-quartz-dark .ag-header {
+  background-color: hsl(222 42% 9%);
+}
+
+.ag-theme-quartz-dark .ag-cell,
+.ag-theme-quartz-dark .ag-header-cell-text {
+  font-variant-numeric: tabular-nums;
+}
+
+@media print {
+  header,
+  .page-sub-header {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .print\:hidden {
+    display: none !important;
+  }
+  .factsheet-sheet {
+    box-shadow: none !important;
+    max-width: none !important;
+    padding: 12mm !important;
+  }
+  .factsheet-sheet h2 {
+    font-size: 14pt !important;
+    line-height: 1.25 !important;
+    max-width: 130mm;
+  }
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+}
