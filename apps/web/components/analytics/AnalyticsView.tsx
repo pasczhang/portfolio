@@ -1,183 +1,335 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Legend,
   Line,
   LineChart,
+  Pie,
+  PieChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { AppShell } from "@/components/layout/AppShell";
+import { useBook } from "@/components/layout/BookProvider";
 import { useDesk } from "@/components/layout/DeskProvider";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useApiOr } from "@/hooks/useApiOr";
-import { MOCK_RUNOFF, MOCK_TENOR, MOCK_YIELD } from "@/lib/mocks";
-import { num, navPx, pctFmt, usd } from "@/lib/format";
-import type { RateShockPoint } from "@/lib/desk-types";
-import { StatusPill } from "@/components/desk/meters";
+import {
+  RANGE_OPTIONS,
+  WAM_CAP,
+  WAL_CAP,
+  DLA_FLOOR,
+  WLA_FLOOR,
+  benchmarkLevel,
+  benchmarkName,
+  buildCreditMix,
+  buildGeoMix,
+  buildLiquiditySeries,
+  buildMaturityLadder,
+  buildStressMatrix,
+  buildYieldSeries,
+  dv01,
+  modifiedDuration,
+  type AnalyticsRange,
+} from "@/lib/holdings/analyticsDesk";
+import { moneyFull, pctFmt } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import { PIE_COLORS } from "@/lib/report";
 
-const SHIFTS = [-100, -50, -25, 0, 25, 50, 100];
 const tooltip = {
   contentStyle: { background: "#0b1220", border: "1px solid #1e293b", fontSize: 12 },
   labelStyle: { color: "#94a3b8" },
+  itemStyle: { color: "#e2e8f0" },
 };
 
-/** Original Analytics desk: tenor buckets, yield-curve shock slider, run-off stress. */
+const STATUS_LABEL = { ok: "绿色安全", watch: "黄色预警", breach: "红色超标" } as const;
+
 export function AnalyticsView() {
   const { fund } = useDesk();
-  const tenor = useApiOr("/analytics/tenor-distribution", MOCK_TENOR);
-  const yieldShock = useApiOr("/analytics/yield-curve-shock", MOCK_YIELD);
-  const runoff = useApiOr("/analytics/runoff", MOCK_RUNOFF);
-  const [shift, setShift] = useState(0);
-  const source = tenor.source === "api" && yieldShock.source === "api" && runoff.source === "api" ? "api" : tenor.source;
+  const { metrics, positions, source, asOf } = useBook();
+  const [range, setRange] = useState<AnalyticsRange>("1m");
+  const days = RANGE_OPTIONS.find((r) => r.id === range)?.days ?? 30;
+  const bench = benchmarkName(fund.ccy);
+  const benchPx = benchmarkLevel(fund.ccy);
+  const y7 = metrics.portfolioYieldPct;
+  const shadowY = y7 + metrics.deviationBps / 100;
+  const duration = modifiedDuration(metrics.wamDays);
+  const dv = dv01(metrics.aum, metrics.wamDays);
 
-  const selected: RateShockPoint = useMemo(() => {
-    const hit = yieldShock.data.curve.find((p) => p.shift_bps === shift);
-    return hit ?? yieldShock.data.selected;
-  }, [yieldShock.data, shift]);
+  const yieldRows = useMemo(
+    () => buildYieldSeries(asOf, days, y7, benchPx, shadowY, `${fund.id}:${asOf}`),
+    [asOf, days, y7, benchPx, shadowY, fund.id],
+  );
+  const liqRows = useMemo(
+    () => buildLiquiditySeries(asOf, Math.min(days, 30), metrics.dlaPct, metrics.wlaPct, `${fund.id}:liq`),
+    [asOf, days, metrics.dlaPct, metrics.wlaPct, fund.id],
+  );
+  const ladder = useMemo(() => buildMaturityLadder(positions, asOf), [positions, asOf]);
+  const credit = useMemo(() => buildCreditMix(positions), [positions]);
+  const geo = useMemo(() => buildGeoMix(positions), [positions]);
+  const stress = useMemo(() => buildStressMatrix(metrics), [metrics]);
 
-  const tenorRows = tenor.data.buckets.map((b) => ({
-    bucket: b.bucket,
-    amount: num(b.amount) / 1e6,
-    weight: num(b.weight_pct),
-  }));
-
-  const shockRows = yieldShock.data.curve.map((p) => ({
-    shift: p.shift_bps,
-    shadow: num(p.shadow_nav),
-    deviation: num(p.deviation_bps),
-  }));
-
-  const runoffRows = runoff.data.scenarios.map((s) => ({
-    name: `${num(s.redemption_pct)}%`,
-    cash: num(s.cash_after) / 1e6,
-    dla: num(s.dla_pct_after),
-    wla: num(s.wla_pct_after),
-  }));
+  const last = yieldRows[yieldRows.length - 1];
+  const prev = yieldRows[yieldRows.length - 2] ?? last;
+  const vsYestBps = Math.round(((last?.fund7d ?? y7) - (prev?.fund7d ?? y7)) * 100);
+  const excessBps = Math.round(((last?.fund7d ?? y7) - (last?.bench ?? benchPx)) * 100);
 
   return (
-    <AppShell title="分析看板 · Analytics" subtitle={`${fund.name} · 久期分布 · 利率曲线冲击 · 赎回压力`} source={source}>
-      <Card className="p-4">
-        <h2 className="mb-3 text-sm font-semibold">久期与到期分布</h2>
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={tenorRows}>
-              <CartesianGrid stroke="#1e2a3f" />
-              <XAxis dataKey="bucket" stroke="#94a3b8" tick={{ fontSize: 11 }} />
-              <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} />
-              <Tooltip {...tooltip} formatter={(v) => [`${Number(v ?? 0).toFixed(2)}m`, "摊余成本"]} />
-              <Bar dataKey="amount" name="摊余成本 (USD m)" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+    <AppShell
+      title="分析看板 · Analytics"
+      subtitle={`${fund.name} · 量化投研工作台 · ${bench} 基准 · as of ${asOf}`}
+      source={source}
+      actions={
+        <div className="flex overflow-hidden rounded-md border border-[hsl(var(--border))]">
+          {RANGE_OPTIONS.map((r) => (
+            <Button
+              key={r.id}
+              type="button"
+              variant={range === r.id ? "accent" : "ghost"}
+              className="rounded-none px-2.5"
+              onClick={() => setRange(r.id)}
+            >
+              {r.label}
+            </Button>
+          ))}
         </div>
-      </Card>
+      }
+    >
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <Kpi
+          kicker="7-Day Yield"
+          title="7日年化收益率"
+          value={pctFmt(last?.fund7d ?? y7)}
+          footnote={
+            <>
+              <span className={vsYestBps >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                {vsYestBps >= 0 ? "+" : ""}
+                {vsYestBps} bps vs 昨日
+              </span>
+              <span className="text-[hsl(var(--muted-foreground))]">
+                {" "}
+                · vs {bench} {excessBps >= 0 ? "+" : ""}
+                {excessBps} bps
+              </span>
+            </>
+          }
+        />
+        <Kpi
+          kicker="WAM"
+          title="加权平均到期日"
+          value={`${metrics.wamDays.toFixed(1)} 天`}
+          footnote={<span>监管上限 {WAM_CAP} 天 · 余量 {(WAM_CAP - metrics.wamDays).toFixed(1)} 天</span>}
+        >
+          <Meter pct={(metrics.wamDays / WAM_CAP) * 100} warn={metrics.wamDays > WAM_CAP * 0.85} />
+        </Kpi>
+        <Kpi
+          kicker="WAL"
+          title="加权平均生命周期"
+          value={`${metrics.walDays.toFixed(1)} 天`}
+          footnote={<span>上限 {WAL_CAP} 天 · 安全边际 {(WAL_CAP - metrics.walDays).toFixed(1)} 天</span>}
+        >
+          <Meter pct={(metrics.walDays / WAL_CAP) * 100} warn={metrics.walDays > WAL_CAP * 0.85} />
+        </Kpi>
+        <Kpi
+          kicker="Mod. Duration / DV01"
+          title="修正久期与 DV01"
+          value={moneyFull(dv, fund.ccy)}
+          footnote={
+            <span>
+              {duration.toFixed(3)} 年 · {moneyFull(dv, fund.ccy)} / bp
+            </span>
+          }
+        />
+      </div>
 
-      <Card className="p-4">
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold">利率曲线冲击 Yield Curve Shock</h2>
-            <p className="text-[11px] text-[hsl(var(--muted-foreground))]">平行移动 ±25 / ±50 / ±100 bps，实时重估 Shadow NAV</p>
-          </div>
-          <div className="min-w-[240px]">
-            <input
-              type="range"
-              min={0}
-              max={6}
-              step={1}
-              value={SHIFTS.indexOf(shift)}
-              onChange={(e) => setShift(SHIFTS[Number(e.target.value)] ?? 0)}
-              className="w-full accent-amber-500"
-            />
-            <div className="flex justify-between font-mono text-[10px] text-[hsl(var(--muted-foreground))]">
-              {SHIFTS.map((s) => (
-                <span key={s}>{s > 0 ? `+${s}` : s}</span>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="mb-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-md border border-[hsl(var(--border))] p-3">
-            <p className="text-[10px] uppercase text-[hsl(var(--muted-foreground))]">Selected shock</p>
-            <p className="font-mono text-lg text-amber-400">
-              {shift > 0 ? "+" : ""}
-              {shift} bps
-            </p>
-          </div>
-          <div className="rounded-md border border-[hsl(var(--border))] p-3">
-            <p className="text-[10px] uppercase text-[hsl(var(--muted-foreground))]">Shadow NAV</p>
-            <p className="font-mono text-lg">{navPx(selected.shadow_nav)}</p>
-          </div>
-          <div className="rounded-md border border-[hsl(var(--border))] p-3">
-            <p className="text-[10px] uppercase text-[hsl(var(--muted-foreground))]">偏离度</p>
-            <p className="font-mono text-lg">{num(selected.deviation_bps).toFixed(1)} bps</p>
-          </div>
-        </div>
-        <div className="h-72">
+      <div className="grid gap-4 xl:grid-cols-2">
+        <ChartCard title="收益走势与基准利差" hint={`基金 7 日年化 · ${bench} · 影子市值年化`}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={shockRows}>
-              <CartesianGrid stroke="#1e2a3f" />
-              <XAxis dataKey="shift" stroke="#94a3b8" tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="nav" stroke="#94a3b8" domain={["auto", "auto"]} tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="bps" orientation="right" stroke="#38bdf8" tick={{ fontSize: 11 }} />
-              <Tooltip {...tooltip} />
-              <Legend />
-              <Line yAxisId="nav" type="monotone" dataKey="shadow" name="Shadow NAV" stroke="#f59e0b" dot />
-              <Line yAxisId="bps" type="monotone" dataKey="deviation" name="Deviation bps" stroke="#38bdf8" dot />
+            <LineChart data={yieldRows}>
+              <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
+              <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 10 }} />
+              <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} domain={["auto", "auto"]} tickFormatter={(v) => `${Number(v).toFixed(2)}%`} />
+              <Tooltip
+                {...tooltip}
+                formatter={(value, name) => [`${Number(value ?? 0).toFixed(3)}%`, String(name)]}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line type="monotone" dataKey="fund7d" name="7日年化" stroke="#34d399" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="bench" name={bench} stroke="#38bdf8" strokeWidth={1.5} dot={false} />
+              <Line type="monotone" dataKey="shadow" name="影子市值年化" stroke="#a78bfa" strokeWidth={1.5} dot={false} strokeDasharray="4 3" />
             </LineChart>
           </ResponsiveContainer>
-        </div>
-      </Card>
+        </ChartCard>
 
-      <Card className="p-4">
-        <h2 className="mb-1 text-sm font-semibold">巨额赎回压力测试 Run-off</h2>
-        <p className="mb-3 text-[11px] text-[hsl(var(--muted-foreground))]">模拟 10% / 20% / 30% 赎回对现金与 DLA/WLA 的消耗</p>
-        <div className="h-72">
+        <ChartCard title="现金流到期阶梯" hint="定期存款 · CD/商票 · 国债/外汇基金票据">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={runoffRows}>
-              <CartesianGrid stroke="#1e2a3f" />
-              <XAxis dataKey="name" stroke="#94a3b8" />
-              <YAxis stroke="#94a3b8" />
-              <Tooltip {...tooltip} />
-              <Legend />
-              <Bar dataKey="cash" name="剩余现金 (USD m)" fill="#64748b" />
-              <Bar dataKey="dla" name="DLA %" fill="#34d399" />
-              <Bar dataKey="wla" name="WLA %" fill="#38bdf8" />
+            <BarChart data={ladder}>
+              <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
+              <XAxis dataKey="bucket" tick={{ fill: "#94a3b8", fontSize: 10 }} interval={0} />
+              <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} tickFormatter={(v) => `${(Number(v) / 1e6).toFixed(0)}m`} />
+              <Tooltip
+                {...tooltip}
+                formatter={(value, name) => [moneyFull(Number(value ?? 0), fund.ccy), String(name)]}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar dataKey="td" name="定期存款到期" stackId="a" fill="#38bdf8" />
+              <Bar dataKey="cd" name="CD/商票兑付" stackId="a" fill="#818cf8" />
+              <Bar dataKey="govt" name="国债到期" stackId="a" fill="#f59e0b" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="流动性缓冲垫动态监控" hint={`近 ${Math.min(days, 30)} 天 · DLA ≥ ${DLA_FLOOR}% · WLA ≥ ${WLA_FLOOR}%`}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={liqRows}>
+              <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
+              <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 10 }} />
+              <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} tickFormatter={(v) => `${Number(v).toFixed(0)}%`} />
+              <Tooltip {...tooltip} formatter={(value, name) => [`${Number(value ?? 0).toFixed(2)}%`, String(name)]} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <ReferenceLine y={DLA_FLOOR} stroke="#f87171" strokeDasharray="5 4" label={{ value: `DLA ${DLA_FLOOR}%`, fill: "#f87171", fontSize: 10 }} />
+              <ReferenceLine y={WLA_FLOOR} stroke="#fb923c" strokeDasharray="5 4" label={{ value: `WLA ${WLA_FLOOR}%`, fill: "#fb923c", fontSize: 10 }} />
+              <Area type="monotone" dataKey="dla" name="DLA %" stroke="#34d399" fill="#34d39933" />
+              <Area type="monotone" dataKey="wla" name="WLA %" stroke="#38bdf8" fill="#38bdf822" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <Card className="p-3">
+          <h2 className="mb-1 text-sm font-semibold">双维度信用与资产穿透</h2>
+          <p className="mb-2 text-[10px] text-[hsl(var(--muted-foreground))]">评级堆叠 · 国家/地区甜甜圈</p>
+          <div className="grid h-[280px] gap-2 md:grid-cols-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={credit} layout="vertical" margin={{ left: 8 }}>
+                <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
+                <XAxis type="number" tick={{ fill: "#94a3b8", fontSize: 10 }} tickFormatter={(v) => `${Number(v).toFixed(0)}%`} />
+                <YAxis type="category" dataKey="rating" width={72} tick={{ fill: "#94a3b8", fontSize: 10 }} />
+                <Tooltip
+                  {...tooltip}
+                  formatter={(value, _n, item) => [
+                    `${pctFmt(Number(value ?? 0))} · ${moneyFull(Number(item?.payload?.value ?? 0), fund.ccy)}`,
+                    "占比",
+                  ]}
+                />
+                <Bar dataKey="pct" fill="#818cf8" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={geo} dataKey="value" nameKey="name" innerRadius={48} outerRadius={80} paddingAngle={2}>
+                  {geo.map((_, i) => (
+                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  {...tooltip}
+                  formatter={(value, name) => {
+                    const row = geo.find((g) => g.name === name);
+                    return [`${moneyFull(Number(value ?? 0), fund.ccy)} · ${pctFmt(row?.pct ?? 0)}`, String(name)];
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      </div>
+
+      <Card className="overflow-hidden">
+        <div className="border-b border-[hsl(var(--border))] px-3 py-2">
+          <h2 className="text-sm font-semibold">利率与流动性压力测试矩阵</h2>
+          <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+            敏感度快照 · 偏离度 / WAM / DLA / WLA · 修正久期 {duration.toFixed(3)}
+          </p>
         </div>
-        <table className="mt-4 w-full text-left text-xs">
-          <thead className="font-mono text-[10px] uppercase text-[hsl(var(--muted-foreground))]">
-            <tr>
-              <th className="py-1">赎回</th>
-              <th>流出</th>
-              <th>现金后</th>
-              <th>DLA后</th>
-              <th>WLA后</th>
-              <th>状态</th>
-            </tr>
-          </thead>
-          <tbody>
-            {runoff.data.scenarios.map((s) => (
-              <tr key={String(s.redemption_pct)} className="border-t border-[hsl(var(--border))]">
-                <td className="py-2 font-mono">{pctFmt(s.redemption_pct, 0)}</td>
-                <td className="font-mono">{usd(s.outflow)}</td>
-                <td className="font-mono">{usd(s.cash_after)}</td>
-                <td className="font-mono">{pctFmt(s.dla_pct_after)}</td>
-                <td className="font-mono">{pctFmt(s.wla_pct_after)}</td>
-                <td>
-                  <StatusPill status={!s.dla_ok || !s.wla_ok || s.fire_sale ? "WARN" : "PASS"} />
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-[hsl(var(--muted))] font-mono text-[10px] uppercase text-[hsl(var(--muted-foreground))]">
+              <tr>
+                <th className="px-3 py-2">情景</th>
+                <th className="px-3 py-2">预估偏离度 (bps)</th>
+                <th className="px-3 py-2">预估 WAM</th>
+                <th className="px-3 py-2">DLA 剩余</th>
+                <th className="px-3 py-2">WLA 剩余</th>
+                <th className="px-3 py-2">合规状态</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {stress.map((row) => (
+                <tr key={row.id} className="border-t border-[hsl(var(--border))]">
+                  <td className="px-3 py-2">{row.scenario}</td>
+                  <td className="px-3 py-2 font-mono tabular-nums">
+                    {row.deviationBps >= 0 ? "+" : ""}
+                    {row.deviationBps.toFixed(1)}
+                  </td>
+                  <td className="px-3 py-2 font-mono tabular-nums">{row.wamDays.toFixed(1)}d</td>
+                  <td className="px-3 py-2 font-mono tabular-nums">{pctFmt(row.dlaPct)}</td>
+                  <td className="px-3 py-2 font-mono tabular-nums">{pctFmt(row.wlaPct)}</td>
+                  <td className="px-3 py-2">
+                    <Badge tone={row.status}>{STATUS_LABEL[row.status]}</Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </AppShell>
+  );
+}
+
+function Kpi({
+  kicker,
+  title,
+  value,
+  footnote,
+  children,
+}: {
+  kicker: string;
+  title: string;
+  value: string;
+  footnote: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <Card className="p-3">
+      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--muted-foreground))]">{kicker}</p>
+      <p className="mt-0.5 text-xs text-[hsl(var(--muted-foreground))]">{title}</p>
+      <p className="mt-1 font-mono text-xl font-semibold tabular-nums text-emerald-300">{value}</p>
+      {children}
+      <p className="mt-2 text-[10px] leading-snug">{footnote}</p>
+    </Card>
+  );
+}
+
+function Meter({ pct, warn }: { pct: number; warn?: boolean }) {
+  return (
+    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[hsl(var(--muted))]">
+      <div
+        className={cn("h-full rounded-full", warn ? "bg-amber-400" : "bg-sky-400")}
+        style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+      />
+    </div>
+  );
+}
+
+function ChartCard({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
+  return (
+    <Card className="p-3">
+      <h2 className="text-sm font-semibold">{title}</h2>
+      <p className="mb-2 text-[10px] text-[hsl(var(--muted-foreground))]">{hint}</p>
+      <div className="h-[280px]">{children}</div>
+    </Card>
   );
 }
