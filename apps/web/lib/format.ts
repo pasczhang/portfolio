@@ -14,22 +14,43 @@ export function bookToFund(usdAmount: number | string, ccy: FundCcy): number {
   return ccy === "HKD" ? n * HKD_PER_USD : n;
 }
 
-export function money(usdAmount: number | string, ccy: FundCcy = "USD", digits = 0): string {
+function nativeMoney(amount: number | string, ccy: FundCcy, digits: number): string {
   return new Intl.NumberFormat(ccy === "HKD" ? "en-HK" : "en-US", {
     style: "currency",
     currency: ccy,
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
-  }).format(bookToFund(usdAmount, ccy));
+  }).format(num(amount));
 }
 
-export function moneyFull(usdAmount: number | string, ccy: FundCcy = "USD"): string {
-  return money(usdAmount, ccy, 2);
+export function money(amount: number | string, ccy: FundCcy = "USD", digits = 0): string {
+  return nativeMoney(amount, ccy, digits);
 }
 
-export function signedMoney(usdAmount: number | string, ccy: FundCcy = "USD"): string {
-  const n = bookToFund(usdAmount, ccy);
-  const txt = moneyFull(Math.abs(num(usdAmount)), ccy);
+/** Format a position in the desk share-class currency (USD book × 7.80; native HKD left as-is). */
+export function moneyPosition(
+  amount: number | string,
+  positionCcy: string,
+  fundCcy: FundCcy,
+  digits = 2,
+): string {
+  if (positionCcy === fundCcy) return nativeMoney(amount, fundCcy, digits);
+  if (positionCcy === "HKD" && fundCcy === "USD") return nativeMoney(num(amount) / HKD_PER_USD, "USD", digits);
+  if (positionCcy === "USD" && fundCcy === "HKD") return nativeMoney(num(amount) * HKD_PER_USD, "HKD", digits);
+  return nativeMoney(amount, fundCcy, digits);
+}
+
+export function moneyNative(amount: number | string, ccy: FundCcy = "USD", digits = 0): string {
+  return nativeMoney(amount, ccy, digits);
+}
+
+export function moneyFull(amount: number | string, ccy: FundCcy = "USD"): string {
+  return money(amount, ccy, 2);
+}
+
+export function signedMoney(amount: number | string, ccy: FundCcy = "USD"): string {
+  const n = num(amount);
+  const txt = moneyFull(Math.abs(n), ccy);
   if (n > 0) return `+${txt}`;
   if (n < 0) return `−${txt}`;
   return txt;

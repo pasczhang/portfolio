@@ -4,10 +4,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Bell, Moon, Sun, UserRound } from "lucide-react";
+import { Bell, ChevronDown, Moon, Sun, UserRound } from "lucide-react";
 import { FUNDS, useDesk } from "@/components/layout/DeskProvider";
+import { useBook } from "@/components/layout/BookProvider";
 import { cn } from "@/lib/utils";
-import { apiGetOr } from "@/lib/api";
 import { num } from "@/lib/format";
 
 const TABS = [
@@ -41,35 +41,22 @@ function wlaClass(pct: number) {
 export function GlobalHeader() {
   const pathname = usePathname();
   const { fund, fundId, setFundId, asOf, role, setRole, dark, toggleTheme } = useDesk();
-  const [spread, setSpread] = useState(8.2);
-  const [wla, setWla] = useState(24.8);
-  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const { metrics, compliance, origin } = useBook();
+  const spread = num(metrics.deviationBps);
+  const wla = num(metrics.wlaPct);
+  const feedSource = origin === "import" ? "import" : "mock";
+  const alerts = compliance.alerts.map((a) => ({ id: a.id, title: a.title, severity: a.severity }));
   const [openAlerts, setOpenAlerts] = useState(false);
   const [openUser, setOpenUser] = useState(false);
+  const [openMore, setOpenMore] = useState(false);
   const wrap = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    void apiGetOr<{ deviation_bps: number | string; wla_pct: number | string }>("/dashboard/workbench", {
-      deviation_bps: 8.2,
-      wla_pct: 24.8,
-    }).then((res) => {
-      setSpread(num(res.data.deviation_bps));
-      setWla(num(res.data.wla_pct));
-    });
-    void apiGetOr<AlertItem[]>("/compliance/breaches", [
-      { id: "a1", title: "BOC 集中度 14.3% > 10%", severity: "breach" },
-      { id: "a2", title: "HSBC 定存特许 20% 备案复核", severity: "watch" },
-    ]).then((res) => {
-      const rows = Array.isArray(res.data) ? res.data : [];
-      setAlerts(rows.map((a) => ({ id: String(a.id), title: a.title || a.id, severity: a.severity || "watch" })));
-    });
-  }, [asOf]);
 
   useEffect(() => {
     function onDoc(ev: MouseEvent) {
       if (!wrap.current?.contains(ev.target as Node)) {
         setOpenAlerts(false);
         setOpenUser(false);
+        setOpenMore(false);
       }
     }
     document.addEventListener("mousedown", onDoc);
@@ -114,7 +101,16 @@ export function GlobalHeader() {
           </select>
           <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] text-[hsl(var(--muted-foreground))]">
             As-of {asOf}
-            <span className="rounded border border-emerald-500/40 px-1 text-emerald-400">LIVE</span>
+            <span
+              className={cn(
+                "rounded border px-1",
+                feedSource === "import"
+                  ? "border-sky-500/40 text-sky-400"
+                  : "border-amber-500/40 text-amber-400",
+              )}
+            >
+              {feedSource === "import" ? "IMPORTED" : "SAMPLE"}
+            </span>
             <span className="hidden lg:inline">{fund.shortName}</span>
           </p>
         </div>
@@ -153,6 +149,34 @@ export function GlobalHeader() {
           <span className={cn("rounded border border-[hsl(var(--border))] px-1.5 py-0.5", wlaClass(wla))}>
             WLA: {wla.toFixed(1)}%
           </span>
+        </div>
+        <div className="relative">
+          <button
+            type="button"
+            className="flex items-center gap-0.5 rounded-md border border-[hsl(var(--border))] px-2 py-1 text-[10px]"
+            onClick={() => {
+              setOpenMore((v) => !v);
+              setOpenAlerts(false);
+              setOpenUser(false);
+            }}
+          >
+            更多
+            <ChevronDown className="h-3 w-3" />
+          </button>
+          {openMore ? (
+            <div className="absolute right-0 top-10 z-50 w-44 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-[11px] shadow-xl">
+              {MORE.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="block py-1 hover:text-amber-400"
+                  onClick={() => setOpenMore(false)}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="relative">
           <button
@@ -200,7 +224,7 @@ export function GlobalHeader() {
               <p className="font-medium">Desk User</p>
               <p className="text-[hsl(var(--muted-foreground))]">{fund.name}</p>
               <p className="mt-1 font-mono">
-                {fund.code} · {fund.ccy} · session LIVE
+                {fund.code} · {fund.ccy} · session {feedSource === "import" ? "IMPORTED" : "SAMPLE"}
               </p>
               <div className="mt-2 border-t border-[hsl(var(--border))] pt-2">
                 {MORE.map((item) => (

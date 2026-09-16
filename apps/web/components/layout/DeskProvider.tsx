@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { PRODUCT_AS_OF } from "@/constants/calendar";
 import { DEFAULT_FUND_ID, FUNDS, fundById, type CurrentFund, type FundCcy } from "@/constants/funds";
 
 export type DeskRole = "maker" | "checker";
@@ -33,6 +34,8 @@ export function DeskProvider({ children }: { children: ReactNode }) {
       const resolved = fundById(storedFund);
       setFundIdState(resolved.id);
     }
+    const storedRole = window.localStorage.getItem("pms-role");
+    if (storedRole === "maker" || storedRole === "checker") setRole(storedRole);
   }, []);
 
   useEffect(() => {
@@ -46,16 +49,21 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     window.localStorage.setItem("pms-fund", resolved);
   }
 
+  function setDeskRole(next: DeskRole) {
+    setRole(next);
+    window.localStorage.setItem("pms-role", next);
+  }
+
   const value = useMemo<DeskState>(() => {
     const fund = fundById(fundId);
     return {
       fundId,
       fund,
-      asOf: "2026-09-15",
+      asOf: PRODUCT_AS_OF,
       role,
       dark,
       setFundId,
-      setRole,
+      setRole: setDeskRole,
       toggleTheme: () => setDark((v) => !v),
     };
   }, [fundId, role, dark]);

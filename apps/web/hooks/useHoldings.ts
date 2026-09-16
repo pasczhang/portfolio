@@ -1,18 +1,22 @@
 "use client";
 
-import { useApiOr } from "@/hooks/useApiOr";
-import { MOCK_HOLDINGS } from "@/lib/mocks";
-import type { HoldingRow } from "@/components/grid/HoldingsGrid";
-
-type HoldingsResponse = {
-  as_of: string;
-  fund_code: string;
-  aum_securities: number | string;
-  row_count: number;
-  holdings: HoldingRow[];
-};
+import { useBook } from "@/components/layout/BookProvider";
+import { useDesk } from "@/components/layout/DeskProvider";
 
 export function useHoldings() {
-  const { data, source, loading, reload } = useApiOr<HoldingsResponse>("/portfolio/holdings", MOCK_HOLDINGS);
-  return { data, holdings: data.holdings ?? [], source, loading, reload };
+  const { fund } = useDesk();
+  const { holdings, asOf, aum, source } = useBook();
+  return {
+    data: {
+      as_of: asOf,
+      fund_code: fund.code,
+      aum_securities: aum,
+      row_count: holdings.length,
+      holdings,
+    },
+    holdings,
+    source,
+    loading: false,
+    reload: () => undefined,
+  };
 }

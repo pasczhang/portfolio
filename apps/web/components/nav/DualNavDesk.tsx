@@ -14,13 +14,13 @@ import {
 } from "recharts";
 import { AppShell } from "@/components/layout/AppShell";
 import { useDesk } from "@/components/layout/DeskProvider";
+import { useBook } from "@/components/layout/BookProvider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { useApiOr } from "@/hooks/useApiOr";
-import { applyStress, MOCK_DUAL_NAV, type DualNavSnapshot, type DualPosition } from "@/lib/dualNav";
-import { bpsFmt, moneyFull, navPx5, num, pctFmt } from "@/lib/format";
+import { applyStress, type DualPosition } from "@/lib/dualNav";
+import { bpsFmt, moneyFull, moneyPosition, navPx5, num, pctFmt } from "@/lib/format";
 
 const tooltip = {
   contentStyle: { background: "#0b1220", border: "1px solid #1e293b", fontSize: 12 },
@@ -66,7 +66,7 @@ function PositionDrawer({ row, ccy }: { row: DualPosition; ccy: "USD" | "HKD" })
               <tr key={`${cf.date}-${cf.days}`}>
                 <td className="py-1">{cf.date}</td>
                 <td>{cf.days}D</td>
-                <td>{moneyFull(cf.amount, ccy)}</td>
+                <td>{moneyPosition(cf.amount, row.currency, ccy)}</td>
                 <td>{cf.description}</td>
               </tr>
             ))}
@@ -79,7 +79,7 @@ function PositionDrawer({ row, ccy }: { row: DualPosition; ccy: "USD" | "HKD" })
 
 export function DualNavDesk() {
   const { fund } = useDesk();
-  const { data: base, source, reload } = useApiOr<DualNavSnapshot>("/nav/dual", MOCK_DUAL_NAV);
+  const { dualNav, source } = useBook();
   const [curve, setCurve] = useState(0);
   const [spread, setSpread] = useState(0);
   const [q, setQ] = useState("");
@@ -87,11 +87,11 @@ export function DualNavDesk() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [vnavOpen, setVnavOpen] = useState(false);
 
-  const data = useMemo(() => applyStress(base, curve, spread), [base, curve, spread]);
+  const data = useMemo(() => applyStress(dualNav, curve, spread), [dualNav, curve, spread]);
   const k = data.kpis;
   const rows = data.positions.filter((p) => {
-    const pool = p.currency === fund.ccy;
-    const hit = !q || `${p.isin} ${p.name} ${p.issuer}`.toLowerCase().includes(q.toLowerCase());
+    const pool = fund.ccy === "USD" ? p.currency !== "HKD" : true;
+    const hit = !q || `${p.isin} ${p.name} ${p.issuer} ${p.currency}`.toLowerCase().includes(q.toLowerCase());
     const typ = type === "ALL" || p.asset_type === type;
     return pool && hit && typ;
   });
@@ -109,7 +109,13 @@ export function DualNavDesk() {
       subtitle={`${fund.name} · ${fund.code} · ${fund.ccy} Accounting vs Shadow NAV`}
       source={source}
       actions={
-        <Button variant="outline" onClick={() => reload()}>
+        <Button
+          variant="outline"
+          onClick={() => {
+            setCurve(0);
+            setSpread(0);
+          }}
+        >
           重新估值
         </Button>
       }
@@ -249,6 +255,7 @@ export function DualNavDesk() {
             <tr>
               <th className="px-3 py-2">代码 / 名称</th>
               <th>类型</th>
+              <th>币种</th>
               <th>剩余期限</th>
               <th>摊余成本</th>
               <th>影子估值</th>
@@ -267,11 +274,12 @@ export function DualNavDesk() {
                     <div>{p.name}</div>
                   </td>
                   <td>{p.asset_type}</td>
+                  <td className="font-mono">{p.currency}</td>
                   <td className="font-mono">{p.days_to_maturity}D</td>
-                  <td className="font-mono">{moneyFull(p.amortised_book, fund.ccy)}</td>
-                  <td className="font-mono">{moneyFull(p.shadow_value, fund.ccy)}</td>
+                  <td className="font-mono">{moneyPosition(p.amortised_book, p.currency, fund.ccy)}</td>
+                  <td className="font-mono">{moneyPosition(p.shadow_value, p.currency, fund.ccy)}</td>
                   <td className={`font-mono ${num(p.diff_amount) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                    {moneyFull(p.diff_amount, fund.ccy)} / {bpsFmt(p.diff_bps)}
+                    {moneyPosition(p.diff_amount, p.currency, fund.ccy)} / {bpsFmt(p.diff_bps)}
                   </td>
                   <td className="max-w-[160px] text-[11px]">{p.pricing_source}</td>
                   <td className="font-mono text-[11px]">

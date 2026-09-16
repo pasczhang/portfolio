@@ -1,4 +1,5 @@
 import { num } from "@/lib/format";
+import { PRODUCT_AS_OF } from "@/constants/calendar";
 import type { PreTradeWhatIfResult, WhatIfForm, WorkbenchSnapshot } from "@/types/workbench";
 
 export const ASSET_OPTIONS = [
@@ -41,7 +42,7 @@ export const DEFAULT_WHAT_IF: WhatIfForm = {
   notional: "20000000",
   tenorPreset: "7D",
   tenorDays: "7",
-  maturityDate: "2026-09-22",
+  maturityDate: "2026-09-23",
   yieldPct: "4.50",
   dayCount: "Act/365",
   rating: "—",
@@ -54,7 +55,7 @@ export function counterpartiesFor(asset: WhatIfForm["assetClass"]): string[] {
 }
 
 export function tenorDaysOf(form: WhatIfForm, asOf?: string): number {
-  const asOfDate = asOf || "2026-09-15";
+  const asOfDate = asOf || PRODUCT_AS_OF;
   if (form.maturityDate) {
     const ms = Date.parse(form.maturityDate) - Date.parse(asOfDate);
     if (Number.isFinite(ms)) return Math.max(1, Math.round(ms / 86_400_000));

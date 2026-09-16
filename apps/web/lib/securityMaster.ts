@@ -1,5 +1,6 @@
 import type { WhatIfForm } from "@/types/workbench";
 import { TENOR_PRESETS } from "@/lib/whatIf";
+import { PRODUCT_AS_OF } from "@/constants/calendar";
 
 export type SecurityMasterRow = {
   security_code: string;
@@ -18,7 +19,7 @@ export type SecurityMasterRow = {
   notes?: string | null;
 };
 
-export const VALUATION_AS_OF = "2026-09-15";
+export const VALUATION_AS_OF = PRODUCT_AS_OF;
 
 export const MOCK_SECURITY_MASTER: SecurityMasterRow[] = [
   {

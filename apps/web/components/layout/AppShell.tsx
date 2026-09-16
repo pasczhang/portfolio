@@ -12,7 +12,7 @@ export function AppShell({
 }: {
   title: string;
   subtitle?: string;
-  source?: "api" | "mock";
+  source?: "api" | "mock" | "import";
   actions?: ReactNode;
   children: ReactNode;
 }) {
@@ -28,10 +28,14 @@ export function AppShell({
             <span
               className={cn(
                 "rounded border px-1.5 py-0.5 font-mono text-[10px]",
-                source === "api" ? "border-emerald-500/40 text-emerald-400" : "border-amber-500/40 text-amber-400",
+                source === "api"
+                  ? "border-emerald-500/40 text-emerald-400"
+                  : source === "import"
+                    ? "border-sky-500/40 text-sky-400"
+                    : "border-amber-500/40 text-amber-400",
               )}
             >
-              {source === "api" ? "LIVE API" : "MOCK"}
+              {source === "api" ? "LIVE API" : source === "import" ? "IMPORTED" : "MOCK"}
             </span>
           ) : null}
           {actions}

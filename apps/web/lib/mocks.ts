@@ -8,8 +8,9 @@ import type {
   YieldCurveShock,
 } from "@/lib/desk-types";
 import type { CashLadderRow, WorkbenchSnapshot } from "@/types/workbench";
+import { PRODUCT_AS_OF } from "@/constants/calendar";
 
-const asOf = "2026-09-10";
+const asOf = PRODUCT_AS_OF;
 
 export const MOCK_HOLDINGS: { as_of: string; fund_code: string; aum_securities: number; row_count: number; holdings: HoldingRow[] } = {
   as_of: asOf,
@@ -23,7 +24,7 @@ export const MOCK_HOLDINGS: { as_of: string; fund_code: string; aum_securities: 
       product_type: "TD",
       counterparty: "HSBC",
       value_date: asOf,
-      maturity_date: "2026-09-11",
+      maturity_date: "2026-09-17",
       coupon_rate_pct: 4.1,
       tenor: "1D",
       tenor_days: 1,
@@ -38,8 +39,8 @@ export const MOCK_HOLDINGS: { as_of: string; fund_code: string; aum_securities: 
       instrument: "Standard Chartered 7D Time Deposit",
       product_type: "TD",
       counterparty: "Standard Chartered",
-      value_date: "2026-09-08",
-      maturity_date: "2026-09-17",
+      value_date: "2026-09-14",
+      maturity_date: "2026-09-23",
       coupon_rate_pct: 4.35,
       tenor: "7D",
       tenor_days: 7,
@@ -54,8 +55,8 @@ export const MOCK_HOLDINGS: { as_of: string; fund_code: string; aum_securities: 
       instrument: "HKMA Exchange Fund Bill 14D",
       product_type: "T-Bill",
       counterparty: "HKMA",
-      value_date: "2026-09-07",
-      maturity_date: "2026-09-24",
+      value_date: "2026-09-13",
+      maturity_date: "2026-09-30",
       coupon_rate_pct: 3.9,
       tenor: "14D",
       tenor_days: 14,
@@ -70,8 +71,8 @@ export const MOCK_HOLDINGS: { as_of: string; fund_code: string; aum_securities: 
       instrument: "US Treasury Bill 4W",
       product_type: "T-Bill",
       counterparty: "US Treasury",
-      value_date: "2026-09-03",
-      maturity_date: "2026-10-01",
+      value_date: "2026-09-09",
+      maturity_date: "2026-10-07",
       coupon_rate_pct: 4.8,
       tenor: "21D",
       tenor_days: 21,
@@ -86,8 +87,8 @@ export const MOCK_HOLDINGS: { as_of: string; fund_code: string; aum_securities: 
       instrument: "ICBC Negotiable CD",
       product_type: "NCD",
       counterparty: "ICBC",
-      value_date: "2026-08-31",
-      maturity_date: "2026-10-25",
+      value_date: "2026-09-06",
+      maturity_date: "2026-10-31",
       coupon_rate_pct: 4.6,
       tenor: "45D",
       tenor_days: 45,
@@ -102,8 +103,8 @@ export const MOCK_HOLDINGS: { as_of: string; fund_code: string; aum_securities: 
       instrument: "Bank of China NCD FRN",
       product_type: "NCD",
       counterparty: "Bank of China",
-      value_date: "2026-08-26",
-      maturity_date: "2026-11-09",
+      value_date: "2026-09-01",
+      maturity_date: "2026-11-15",
       coupon_rate_pct: 4.4,
       tenor: "60D",
       tenor_days: 60,
@@ -245,7 +246,7 @@ export const MOCK_RUNOFF: RunoffPack = {
 function navSeries(): NavMonitor["series"] {
   const out: NavMonitor["series"] = [];
   for (let i = 29; i >= 0; i -= 1) {
-    const d = new Date(Date.UTC(2026, 8, 10));
+    const d = new Date(Date.UTC(2026, 8, 16));
     d.setUTCDate(d.getUTCDate() - i);
     const wave = 0.00008 * Math.sin(i / 4.2);
     const shadow = Number((1.0004 + wave - 0.00003 * ((i % 5) - 2)).toFixed(4));
@@ -281,14 +282,14 @@ export const MOCK_NAV: NavMonitor = {
 };
 
 export const MOCK_TRADES: BlotterTrade[] = [
-  { id: "TRD-1007", trade_time: "2026-09-10T14:15:00Z", trade_type: "SELL", counterparty: "ICBC", amount: 2000000, rate: 0.045, maturity_date: "2026-10-10", trader: "Ken Wong", status: "BOOKED" },
-  { id: "TRD-1006", trade_time: "2026-09-09T13:15:00Z", trade_type: "REPO", counterparty: "SCB", amount: 5000000, rate: 0.038, maturity_date: "2026-09-11", trader: "Priya Shah", status: "BOOKED" },
-  { id: "TRD-1005", trade_time: "2026-09-07T12:15:00Z", trade_type: "BUY", counterparty: "HKMA", amount: 7000000, rate: 0.039, maturity_date: "2026-09-24", trader: "Priya Shah", status: "SETTLED" },
-  { id: "TRD-1004", trade_time: "2026-09-03T11:15:00Z", trade_type: "BUY", counterparty: "US Treasury", amount: 28000000, rate: 0.048, maturity_date: "2026-10-01", trader: "Amy Chen", status: "SETTLED" },
-  { id: "TRD-1003", trade_time: "2026-08-31T10:15:00Z", trade_type: "BUY", counterparty: "ICBC", amount: 10000000, rate: 0.046, maturity_date: "2026-10-25", trader: "Ken Wong", status: "SETTLED" },
-  { id: "TRD-1002", trade_time: "2026-08-26T09:15:00Z", trade_type: "BUY", counterparty: "Bank of China", amount: 15000000, rate: 0.044, maturity_date: "2026-11-09", trader: "Ken Wong", status: "SETTLED" },
-  { id: "TRD-1001", trade_time: "2026-09-08T10:15:00Z", trade_type: "DEPOSIT", counterparty: "Standard Chartered", amount: 8000000, rate: 0.0435, maturity_date: "2026-09-17", trader: "Amy Chen", status: "SETTLED" },
-  { id: "TRD-1000", trade_time: "2026-09-10T09:15:00Z", trade_type: "BUY", counterparty: "HSBC", amount: 12000000, rate: 0.041, maturity_date: "2026-09-11", trader: "Amy Chen", status: "BOOKED" },
+  { id: "TRD-1007", trade_time: "2026-09-16T14:15:00Z", trade_type: "SELL", counterparty: "ICBC", amount: 2000000, rate: 0.045, maturity_date: "2026-10-16", trader: "Ken Wong", status: "BOOKED" },
+  { id: "TRD-1006", trade_time: "2026-09-15T13:15:00Z", trade_type: "REPO", counterparty: "SCB", amount: 5000000, rate: 0.038, maturity_date: "2026-09-17", trader: "Priya Shah", status: "BOOKED" },
+  { id: "TRD-1005", trade_time: "2026-09-13T12:15:00Z", trade_type: "BUY", counterparty: "HKMA", amount: 7000000, rate: 0.039, maturity_date: "2026-09-30", trader: "Priya Shah", status: "SETTLED" },
+  { id: "TRD-1004", trade_time: "2026-09-09T11:15:00Z", trade_type: "BUY", counterparty: "US Treasury", amount: 28000000, rate: 0.048, maturity_date: "2026-10-07", trader: "Amy Chen", status: "SETTLED" },
+  { id: "TRD-1003", trade_time: "2026-09-06T10:15:00Z", trade_type: "BUY", counterparty: "ICBC", amount: 10000000, rate: 0.046, maturity_date: "2026-10-31", trader: "Ken Wong", status: "SETTLED" },
+  { id: "TRD-1002", trade_time: "2026-09-01T09:15:00Z", trade_type: "BUY", counterparty: "Bank of China", amount: 15000000, rate: 0.044, maturity_date: "2026-11-15", trader: "Ken Wong", status: "SETTLED" },
+  { id: "TRD-1001", trade_time: "2026-09-14T10:15:00Z", trade_type: "DEPOSIT", counterparty: "Standard Chartered", amount: 8000000, rate: 0.0435, maturity_date: "2026-09-23", trader: "Amy Chen", status: "SETTLED" },
+  { id: "TRD-1000", trade_time: "2026-09-16T09:15:00Z", trade_type: "BUY", counterparty: "HSBC", amount: 12000000, rate: 0.041, maturity_date: "2026-09-17", trader: "Amy Chen", status: "BOOKED" },
 ];
 
 function mockCashLadder(start: string): CashLadderRow[] {
@@ -347,7 +348,7 @@ export const MOCK_WORKBENCH: WorkbenchSnapshot = {
     book_value: h.amortized_cost,
     coupon_type: h.product_type === "NCD" && h.security_id.includes("FRN") ? "floating" : "fixed",
     maturity_date: h.maturity_date,
-    rate_reset_date: h.security_id.includes("FRN") ? "2026-09-17" : null,
+    rate_reset_date: h.security_id.includes("FRN") ? "2026-09-23" : null,
     asset_class: h.product_type,
     is_sovereign: h.counterparty === "US Treasury" || h.counterparty === "HKMA",
     settlement_lag_business_days: 0,

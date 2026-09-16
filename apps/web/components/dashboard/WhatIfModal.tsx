@@ -104,7 +104,7 @@ export function WhatIfModal({
   onCommit: (form: WhatIfForm) => Promise<boolean>;
   initialForm?: Partial<WhatIfForm>;
 }) {
-  const { fund } = useDesk();
+  const { fund, role } = useDesk();
   const [form, setForm] = useState<WhatIfForm>({ ...DEFAULT_WHAT_IF, currency: fund.ccy });
   const [query, setQuery] = useState("");
   const [openList, setOpenList] = useState(false);
@@ -409,11 +409,17 @@ export function WhatIfModal({
               <Button
                 type="button"
                 variant="accent"
-                disabled={blocked || committing || !result}
-                title={blocked ? "SFC 违规，禁止提交" : "写入 Blotter 与 Holdings"}
+                disabled={blocked || committing || !result || role !== "maker"}
+                title={
+                  role !== "maker"
+                    ? "Checker 只读：需 PM Maker 提交"
+                    : blocked
+                      ? "SFC 违规，禁止提交"
+                      : "写入 Blotter 与 Holdings"
+                }
                 onClick={() => void onCommit(form)}
               >
-                {committing ? "入账中…" : "确认执行交易（Execute & Commit）"}
+                {role !== "maker" ? "Checker 只读" : committing ? "入账中…" : "确认执行交易（Execute & Commit）"}
               </Button>
             </div>
           </div>

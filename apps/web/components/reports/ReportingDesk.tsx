@@ -16,14 +16,15 @@ import {
 } from "recharts";
 import { AppShell } from "@/components/layout/AppShell";
 import { useDesk } from "@/components/layout/DeskProvider";
+import { useBook } from "@/components/layout/BookProvider";
+import { PRODUCT_AS_OF } from "@/constants/calendar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useApiOr } from "@/hooks/useApiOr";
-import { apiPost } from "@/lib/api";
-import { downloadText, MOCK_REPORT, PIE_COLORS, pieData, reportToCsv, type ReportSnapshot } from "@/lib/report";
+import { deriveReport } from "@/lib/holdings";
+import { downloadText, PIE_COLORS, pieData, reportToCsv, type ReportSnapshot } from "@/lib/report";
 import { money, moneyFull, navPx, navPx5, num, pctFmt } from "@/lib/format";
 
 const tooltip = {
@@ -33,7 +34,7 @@ const tooltip = {
 
 const PRESETS = [
   { id: "2026-08-31", label: "Aug month-end" },
-  { id: "2026-09-15", label: "Valuation 15 Sep" },
+  { id: PRODUCT_AS_OF, label: "Valuation 16 Sep" },
   { id: "2026-09-30", label: "Sep month-end" },
 ];
 
@@ -44,14 +45,17 @@ function statusTone(status: string): "ok" | "watch" | "breach" {
 }
 
 export function ReportingDesk() {
-  const { fund } = useDesk();
-  const [asOf, setAsOf] = useState("2026-09-15");
+  const { fund, role } = useDesk();
+  const [asOf, setAsOf] = useState(PRODUCT_AS_OF);
   const [tab, setTab] = useState<"compliance" | "factsheet">("compliance");
   const [officer, setOfficer] = useState("Chan Wai-ling");
   const [notes, setNotes] = useState("");
   const [commentary, setCommentary] = useState("");
-  const { data, source, reload } = useApiOr<ReportSnapshot>(`/reporting/snapshot?as_of=${asOf}`, MOCK_REPORT, asOf);
+  const [localSign, setLocalSign] = useState<ReportSnapshot["sign_off"]>(null);
+  const { positions, source } = useBook();
+  const data = useMemo(() => deriveReport(positions, fund, asOf), [positions, fund, asOf]);
   const k = data.kpis;
+  const signed = data.sign_off ?? localSign;
   const text = commentary || data.commentary;
   const brandedSnap: ReportSnapshot = {
     ...data,
@@ -72,17 +76,13 @@ export function ReportingDesk() {
   );
 
   async function signOff() {
-    try {
-      await apiPost("/reporting/sign-off", {
-        as_of: asOf,
-        officer,
-        notes,
-        signed_at: new Date().toISOString(),
-      });
-      reload();
-    } catch {
-      /* mock path */
-    }
+    setLocalSign({
+      officer,
+      title: "Compliance Officer",
+      notes: notes || "Signed against imported/sample book",
+      signed_at: new Date().toISOString(),
+      as_of: asOf,
+    });
   }
 
   function exportCsv() {
@@ -247,9 +247,9 @@ export function ReportingDesk() {
 
           <Card className="p-4">
             <h2 className="mb-2 text-sm font-semibold">合规官声明签字</h2>
-            {data.sign_off ? (
+            {signed ? (
               <p className="font-mono text-xs text-emerald-400">
-                Signed {data.sign_off.officer} · {data.sign_off.signed_at} · {data.sign_off.notes}
+                Signed {signed.officer} · {signed.signed_at} · {signed.notes}
               </p>
             ) : (
               <div className="grid gap-2 md:grid-cols-3">
@@ -261,8 +261,8 @@ export function ReportingDesk() {
                   <Label>审计附注</Label>
                   <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="本期声明 / 整改时限" />
                 </div>
-                <Button variant="accent" onClick={() => void signOff()}>
-                  签署本期底稿
+                <Button variant="accent" onClick={() => void signOff()} disabled={role !== "checker"}>
+                  {role === "checker" ? "签署本期底稿" : "需 Risk Checker 签署"}
                 </Button>
               </div>
             )}

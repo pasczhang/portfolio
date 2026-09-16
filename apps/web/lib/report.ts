@@ -73,7 +73,7 @@ export type ReportSnapshot = {
 };
 
 export const MOCK_REPORT: ReportSnapshot = {
-  as_of: "2026-09-15",
+  as_of: "2026-09-16",
   period_start: "2026-09-01",
   fund_code: "BAM-USD-MMF",
   fund_name: "Balance USD Money Market Fund",

@@ -1,22 +1,20 @@
 "use client";
 
-import { useApiOr } from "@/hooks/useApiOr";
 import { AppShell } from "@/components/layout/AppShell";
 import { useDesk } from "@/components/layout/DeskProvider";
-import { MOCK_COMPLIANCE } from "@/lib/mocks";
+import { useBook } from "@/components/layout/BookProvider";
 import { StatusPill, ProgressBar } from "@/components/desk/meters";
 import { num, pctFmt, money } from "@/lib/format";
 import { Card } from "@/components/ui/card";
 
 export default function CompliancePage() {
   const { fund } = useDesk();
-  const { data, source, loading } = useApiOr("/compliance/dashboard", MOCK_COMPLIANCE);
+  const { compliance: data, source } = useBook();
   const metricCards = data.cards.filter((c) => ["WAM", "WAL", "MAX_RESIDUAL"].includes(c.code));
   const liqCards = data.cards.filter((c) => ["DLA", "WLA"].includes(c.code));
 
   return (
     <AppShell title="SFC Compliance" subtitle={`${fund.name} · SFC 单位信托守则第 8.2 章`} source={source}>
-      {loading ? <p className="text-xs text-[hsl(var(--muted-foreground))]">Loading…</p> : null}
       <p className="font-mono text-[11px] text-[hsl(var(--muted-foreground))]">
         {fund.code} · {fund.shortName} · as of {data.as_of} · AUM {money(data.aum, fund.ccy)}
       </p>

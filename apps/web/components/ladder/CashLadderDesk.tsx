@@ -16,11 +16,11 @@ import {
 } from "recharts";
 import { AppShell } from "@/components/layout/AppShell";
 import { useDesk } from "@/components/layout/DeskProvider";
+import { useBook } from "@/components/layout/BookProvider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useApiOr } from "@/hooks/useApiOr";
-import { chartRows, kindDot, kindTone, MOCK_CASH_LADDER, monthGrid, type DailyPack } from "@/lib/cashLadder";
+import { chartRows, kindDot, kindTone, monthGrid, type DailyPack } from "@/lib/cashLadder";
 import { moneyFull, num, pctFmt, signedMoney } from "@/lib/format";
 
 const tooltip = {
@@ -30,7 +30,7 @@ const tooltip = {
 
 export function CashLadderDesk() {
   const { fund } = useDesk();
-  const { data, source } = useApiOr("/liquidity/ladder", MOCK_CASH_LADDER);
+  const { cashLadder: data, source } = useBook();
   const [view, setView] = useState<"month" | "list">("month");
   const [selected, setSelected] = useState<string | null>(null);
 

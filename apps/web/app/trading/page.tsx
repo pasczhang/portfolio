@@ -14,10 +14,10 @@ import { apiPost } from "@/lib/api";
 import { useApiOr } from "@/hooks/useApiOr";
 import { MOCK_TRADES } from "@/lib/mocks";
 import type { BlotterTrade } from "@/lib/desk-types";
-import { num, usdFull } from "@/lib/format";
+import { num, moneyFull } from "@/lib/format";
 
 export default function TradingPage() {
-  const { fund } = useDesk();
+  const { fund, role } = useDesk();
   const { data, source, reload } = useApiOr("/trades", MOCK_TRADES);
   const [rows, setRows] = useState<BlotterTrade[] | null>(null);
   const [open, setOpen] = useState(false);
@@ -35,7 +35,7 @@ export default function TradingPage() {
         headerName: "金额",
         flex: 1,
         minWidth: 130,
-        valueFormatter: (p: ValueFormatterParams<BlotterTrade>) => usdFull(p.value ?? 0),
+        valueFormatter: (p: ValueFormatterParams<BlotterTrade>) => moneyFull(p.value ?? 0, fund.ccy),
       },
       {
         field: "rate",
@@ -47,7 +47,7 @@ export default function TradingPage() {
       { field: "trader", headerName: "交易员", width: 120 },
       { field: "status", headerName: "状态", width: 110 },
     ],
-    [],
+    [fund.ccy],
   );
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -94,8 +94,8 @@ export default function TradingPage() {
       subtitle={`${fund.name} · 交易记录簿 · BUY / SELL / REPO / DEPOSIT`}
       source={source}
       actions={
-        <Button variant="accent" onClick={() => setOpen(true)}>
-          快速记账
+        <Button variant="accent" onClick={() => setOpen(true)} disabled={role !== "maker"}>
+          {role === "maker" ? "快速记账" : "Checker 只读"}
         </Button>
       }
     >
@@ -136,7 +136,7 @@ export default function TradingPage() {
                 <Input name="counterparty" defaultValue="HSBC" required />
               </label>
               <label className="block text-[11px] text-[hsl(var(--muted-foreground))]">
-                金额 (USD)
+                金额 ({fund.ccy})
                 <Input name="amount" type="number" defaultValue={2000000} min={1} required />
               </label>
               <label className="block text-[11px] text-[hsl(var(--muted-foreground))]">

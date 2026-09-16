@@ -102,7 +102,7 @@ export function kindDot(kind: string): string {
 }
 
 export const MOCK_CASH_LADDER: CashLadderSnapshot = {
-  as_of: "2026-09-15",
+  as_of: "2026-09-16",
   fund_code: "BAM-USD-MMF",
   currency: "USD",
   opening_cash: 15200000,

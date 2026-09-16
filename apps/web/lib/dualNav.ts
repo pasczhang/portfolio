@@ -221,7 +221,7 @@ export function applyStress(base: DualNavSnapshot, curveShiftBps: number, spread
 }
 
 export const MOCK_DUAL_NAV: DualNavSnapshot = {
-  as_of: "2026-09-15",
+  as_of: "2026-09-16",
   fund_code: "BAM-USD-MMF",
   kpis: {
     accounting_nav: 1,
@@ -358,7 +358,7 @@ export const MOCK_DUAL_NAV: DualNavSnapshot = {
       inception_yield: 0,
       coupon: 0,
       face: 8000000,
-      cashflows: [{ date: "2026-09-15", days: 0, amount: 8000000, description: "Cash at par" }],
+      cashflows: [{ date: "2026-09-16", days: 0, amount: 8000000, description: "Cash at par" }],
       model_notes: "Cash at par; no discounting.",
     },
   ],

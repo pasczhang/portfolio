@@ -11,6 +11,7 @@ import { useDesk } from "@/components/layout/DeskProvider";
 import { Button } from "@/components/ui/button";
 import type { WhatIfForm } from "@/types/workbench";
 import { useWorkbench } from "@/hooks/useWorkbench";
+import { HoldingsActions } from "@/components/holdings/HoldingsActions";
 
 export function Workbench() {
   const { data, source, error, live, load, whatIf, whatIfBusy, whatIfError, committing, toast, runWhatIf, commitWhatIf, setWhatIf } =
@@ -44,6 +45,7 @@ export function Workbench() {
       source={data ? source : undefined}
       actions={
         <div className="flex flex-wrap items-center gap-2">
+          <HoldingsActions />
           <span className="hidden font-mono text-[10px] text-[hsl(var(--muted-foreground))] sm:inline">{data?.updated_at}</span>
           <Button variant="outline" onClick={() => void load()}>
             Refresh
@@ -54,7 +56,7 @@ export function Workbench() {
         </div>
       }
     >
-      {error && source === "api" ? (
+      {error ? (
         <p className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</p>
       ) : null}
       {data ? <MetricHeader data={data} live={live} fundName={fund.name} fundCode={fund.code} ccy={fund.ccy} /> : <p className="text-xs text-[hsl(var(--muted-foreground))]">Loading blotter…</p>}
