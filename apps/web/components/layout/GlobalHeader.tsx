@@ -8,6 +8,7 @@ import {
   Bell,
   Building2,
   Calculator,
+  LineChart,
   Moon,
   PieChart,
   Scale,
@@ -31,7 +32,8 @@ const TABS: {
   match?: string[];
 }[] = [
   { href: "/cash", zh: "头寸计算", en: "Cash Position", badge: "T+0/T+1", Icon: Wallet },
-  { href: "/analysis", zh: "持仓分析", en: "Holdings Analysis", badge: "% of NAV", Icon: PieChart, match: ["/portfolio"] },
+  { href: "/analysis", zh: "持仓明细", en: "Holdings", badge: "% of NAV", Icon: PieChart, match: ["/portfolio"] },
+  { href: "/analytics", zh: "分析看板", en: "Analytics", badge: "Stress", Icon: LineChart },
   { href: "/trading", zh: "交易记录", en: "Trade Records", badge: "Blotter", Icon: ScrollText },
   { href: "/workbench", zh: "事前试算", en: "Pre-Trade", badge: "What-if", Icon: Calculator },
   { href: "/nav", zh: "双轨估值", en: "Dual Valuation", badge: "NAV", Icon: Scale },
@@ -122,7 +124,7 @@ export function GlobalHeader() {
               href={tab.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "flex min-w-[92px] shrink-0 flex-col items-center justify-center border-b-2 px-2 text-center transition-colors",
+                "flex min-w-[78px] shrink-0 flex-col items-center justify-center border-b-2 px-1.5 text-center transition-colors",
                 active
                   ? "border-amber-500 bg-amber-500/15 text-amber-200 shadow-[inset_0_-2px_0_0_rgb(245,158,11)]"
                   : "border-transparent text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-foreground",

@@ -37,7 +37,7 @@ export default function HoldingsAnalysisPage() {
 
   return (
     <AppShell
-      title="持仓分析 · Holdings Analysis"
+      title="持仓明细 · Holdings"
       subtitle={`${fund.name} · 占 NAV 比重 · SFC 8.2 单一主体限额 10% / 20%`}
       source={source}
       actions={<HoldingsActions />}
