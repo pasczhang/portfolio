@@ -6,104 +6,140 @@ import type { ColDef, ValueFormatterParams } from "ag-grid-community";
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 import { AppShell } from "@/components/layout/AppShell";
+import { useBook } from "@/components/layout/BookProvider";
 import { useDesk } from "@/components/layout/DeskProvider";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { apiPost } from "@/lib/api";
-import { useApiOr } from "@/hooks/useApiOr";
-import { MOCK_TRADES } from "@/lib/mocks";
-import type { BlotterTrade } from "@/lib/desk-types";
-import { num, moneyFull } from "@/lib/format";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { moneyFull, pctFmt } from "@/lib/format";
+import {
+  SETTLEMENT_STATUSES,
+  TRADE_SIDES,
+  type DeskTrade,
+  type SettlementStatus,
+  type TradeSide,
+} from "@/lib/holdings/trades";
 
 export default function TradingPage() {
-  const { fund, role } = useDesk();
-  const { data, source, reload } = useApiOr("/trades", MOCK_TRADES);
-  const [rows, setRows] = useState<BlotterTrade[] | null>(null);
+  const { fund, role, asOf } = useDesk();
+  const { trades, addTrade, source, cashPosition } = useBook();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const trades = rows ?? data;
+  const [side, setSide] = useState<TradeSide | "ALL">("ALL");
+  const [status, setStatus] = useState<SettlementStatus | "ALL">("ALL");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
 
-  const columnDefs = useMemo<ColDef<BlotterTrade>[]>(
+  const filtered = useMemo(
+    () =>
+      trades.filter((t) => {
+        if (side !== "ALL" && t.side !== side) return false;
+        if (status !== "ALL" && t.status !== status) return false;
+        if (from && t.tradeDate < from) return false;
+        if (to && t.tradeDate > to) return false;
+        return true;
+      }),
+    [trades, side, status, from, to],
+  );
+
+  const columnDefs = useMemo<ColDef<DeskTrade>[]>(
     () => [
-      { field: "trade_time", headerName: "交易时间", flex: 1.2, minWidth: 170 },
-      { field: "trade_type", headerName: "交易类型", width: 110 },
-      { field: "counterparty", headerName: "对手方", width: 160 },
+      { field: "id", headerName: "交易编号", width: 170, pinned: "left" },
+      { field: "tradeDate", headerName: "交易日", width: 110 },
+      { field: "settlementDate", headerName: "交收日", width: 110 },
+      { field: "side", headerName: "交易方向", width: 110 },
+      { field: "assetName", headerName: "资产名称 / 代码", flex: 1.4, minWidth: 200 },
+      { field: "counterparty", headerName: "发行人 / 对手方", width: 170 },
       {
         field: "amount",
-        headerName: "金额",
-        flex: 1,
-        minWidth: 130,
-        valueFormatter: (p: ValueFormatterParams<BlotterTrade>) => moneyFull(p.value ?? 0, fund.ccy),
+        headerName: "交易面值",
+        width: 140,
+        valueFormatter: (p: ValueFormatterParams<DeskTrade>) => moneyFull(p.value ?? 0, fund.ccy),
       },
+      { field: "currency", headerName: "币种", width: 80 },
       {
-        field: "rate",
-        headerName: "利率",
-        width: 100,
-        valueFormatter: (p) => `${(num(p.value) * 100).toFixed(3)}%`,
+        field: "yieldPct",
+        headerName: "执行利率",
+        width: 110,
+        valueFormatter: (p) => pctFmt(Number(p.value ?? 0)),
       },
-      { field: "maturity_date", headerName: "到期日", width: 120 },
-      { field: "trader", headerName: "交易员", width: 120 },
-      { field: "status", headerName: "状态", width: 110 },
+      { field: "status", headerName: "交收状态", width: 110 },
     ],
     [fund.ccy],
   );
 
-  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+  function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const payload = {
-      trade_type: String(fd.get("trade_type")),
+    const trade: DeskTrade = {
+      id: `TRD-${fund.ccy}-${Date.now()}`,
+      tradeDate: String(fd.get("tradeDate") || asOf),
+      settlementDate: String(fd.get("settlementDate") || asOf),
+      side: String(fd.get("side")) as TradeSide,
+      assetName: String(fd.get("assetName")),
+      securityId: String(fd.get("securityId") || `MANUAL-${Date.now()}`),
       counterparty: String(fd.get("counterparty")),
       amount: Number(fd.get("amount")),
-      rate: Number(fd.get("rate")) / 100,
-      tenor_days: Number(fd.get("tenor_days")),
-      trader: String(fd.get("trader") || "PM Desk"),
+      currency: fund.ccy,
+      yieldPct: Number(fd.get("yieldPct")),
+      status: String(fd.get("status")) as SettlementStatus,
     };
-    setBusy(true);
-    setError(null);
-    try {
-      const booked = await apiPost<BlotterTrade>("/trades", payload);
-      setRows([booked, ...trades]);
-      setOpen(false);
-      reload();
-    } catch {
-      const local: BlotterTrade = {
-        id: `TRD-LOCAL-${Date.now()}`,
-        trade_time: new Date().toISOString(),
-        trade_type: payload.trade_type,
-        counterparty: payload.counterparty,
-        amount: payload.amount,
-        rate: payload.rate,
-        maturity_date: new Date(Date.now() + payload.tenor_days * 86400000).toISOString().slice(0, 10),
-        trader: payload.trader,
-        status: "BOOKED (mock)",
-      };
-      setRows([local, ...trades]);
-      setOpen(false);
-      setError("后端不可用，已写入本地 mock 交易簿");
-    } finally {
-      setBusy(false);
-    }
+    addTrade(trade);
+    setOpen(false);
   }
 
   return (
     <AppShell
-      title="Trade Blotter"
-      subtitle={`${fund.name} · 交易记录簿 · BUY / SELL / REPO / DEPOSIT`}
+      title="交易记录 · Trade Blotter"
+      subtitle={`${fund.name} · 买卖 / 定存 / 到期兑付台账 · T+0 可用 ${moneyFull(cashPosition.t0Available, fund.ccy)}`}
       source={source}
       actions={
         <Button variant="accent" onClick={() => setOpen(true)} disabled={role !== "maker"}>
-          {role === "maker" ? "快速记账" : "Checker 只读"}
+          {role === "maker" ? "手动录入交易" : "Checker 只读"}
         </Button>
       }
     >
-      {error ? <p className="text-xs text-amber-400">{error}</p> : null}
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="space-y-1">
+          <Label>交易方向</Label>
+          <select
+            className="h-8 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 text-xs"
+            value={side}
+            onChange={(e) => setSide(e.target.value as TradeSide | "ALL")}
+          >
+            <option value="ALL">全部</option>
+            {TRADE_SIDES.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
+        </label>
+        <label className="space-y-1">
+          <Label>交收状态</Label>
+          <select
+            className="h-8 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 text-xs"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as SettlementStatus | "ALL")}
+          >
+            <option value="ALL">全部</option>
+            {SETTLEMENT_STATUSES.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
+        </label>
+        <label className="space-y-1">
+          <Label>交易日起</Label>
+          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label className="space-y-1">
+          <Label>交易日止</Label>
+          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        </label>
+      </div>
+
       <div className="overflow-hidden rounded-lg border border-[hsl(var(--border))]">
         <div className="ag-theme-quartz-dark h-[560px] w-full">
-          <AgGridReact<BlotterTrade>
-            rowData={trades}
+          <AgGridReact<DeskTrade>
+            rowData={filtered}
             columnDefs={columnDefs}
             defaultColDef={{ sortable: true, resizable: true, cellClass: "font-mono text-[12px]" }}
             rowHeight={34}
@@ -116,47 +152,68 @@ export default function TradingPage() {
       {open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <Card className="w-full max-w-md p-4">
-            <h2 className="mb-3 text-sm font-semibold">新交易 / 存款</h2>
-            <form className="space-y-3" onSubmit={onSubmit}>
-              <label className="block text-[11px] text-[hsl(var(--muted-foreground))]">
-                类型
+            <h2 className="mb-3 text-sm font-semibold">手动录入交易</h2>
+            <form className="grid gap-3" onSubmit={onSubmit}>
+              <label className="space-y-1">
+                <Label>交易方向</Label>
                 <select
-                  name="trade_type"
-                  className="mt-1 h-8 w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 text-xs"
-                  defaultValue="DEPOSIT"
+                  name="side"
+                  className="h-8 w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 text-xs"
+                  defaultValue="Buy"
                 >
-                  <option>BUY</option>
-                  <option>SELL</option>
-                  <option>REPO</option>
-                  <option>DEPOSIT</option>
+                  {TRADE_SIDES.map((s) => (
+                    <option key={s}>{s}</option>
+                  ))}
                 </select>
               </label>
-              <label className="block text-[11px] text-[hsl(var(--muted-foreground))]">
-                对手方
+              <label className="space-y-1">
+                <Label>资产名称</Label>
+                <Input name="assetName" defaultValue="Manual NCD" required />
+              </label>
+              <label className="space-y-1">
+                <Label>资产代码</Label>
+                <Input name="securityId" defaultValue="" placeholder="可选" />
+              </label>
+              <label className="space-y-1">
+                <Label>发行人 / 对手方</Label>
                 <Input name="counterparty" defaultValue="HSBC" required />
               </label>
-              <label className="block text-[11px] text-[hsl(var(--muted-foreground))]">
-                金额 ({fund.ccy})
-                <Input name="amount" type="number" defaultValue={2000000} min={1} required />
+              <label className="space-y-1">
+                <Label>交易面值 ({fund.ccy})</Label>
+                <Input name="amount" type="number" defaultValue={5_000_000} min={1} required />
               </label>
-              <label className="block text-[11px] text-[hsl(var(--muted-foreground))]">
-                利率 (%)
-                <Input name="rate" type="number" step="0.001" defaultValue={4.25} required />
+              <label className="space-y-1">
+                <Label>执行利率 (%)</Label>
+                <Input name="yieldPct" type="number" step="0.01" defaultValue={4.25} required />
               </label>
-              <label className="block text-[11px] text-[hsl(var(--muted-foreground))]">
-                期限 (天)
-                <Input name="tenor_days" type="number" defaultValue={7} min={1} max={397} required />
+              <div className="grid grid-cols-2 gap-2">
+                <label className="space-y-1">
+                  <Label>交易日</Label>
+                  <Input name="tradeDate" type="date" defaultValue={asOf} required />
+                </label>
+                <label className="space-y-1">
+                  <Label>交收日</Label>
+                  <Input name="settlementDate" type="date" defaultValue={asOf} required />
+                </label>
+              </div>
+              <label className="space-y-1">
+                <Label>交收状态</Label>
+                <select
+                  name="status"
+                  className="h-8 w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 text-xs"
+                  defaultValue="Pending"
+                >
+                  {SETTLEMENT_STATUSES.map((s) => (
+                    <option key={s}>{s}</option>
+                  ))}
+                </select>
               </label>
-              <label className="block text-[11px] text-[hsl(var(--muted-foreground))]">
-                交易员
-                <Input name="trader" defaultValue="Amy Chen" />
-              </label>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-1">
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                   取消
                 </Button>
-                <Button type="submit" variant="accent" disabled={busy}>
-                  {busy ? "提交中…" : "提交并刷新持仓"}
+                <Button type="submit" variant="accent">
+                  写入并刷新头寸
                 </Button>
               </div>
             </form>

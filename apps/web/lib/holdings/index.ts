@@ -12,3 +12,6 @@ export {
   deriveCompliance,
   toHoldingRows,
 } from "@/lib/holdings/derive";
+export { computeCashPosition } from "@/lib/holdings/cashPosition";
+export type { DeskTrade, CashAdj, TradeSide, SettlementStatus } from "@/lib/holdings/trades";
+export { sampleTradesFor, defaultCashAdj, TRADE_SIDES, SETTLEMENT_STATUSES } from "@/lib/holdings/trades";

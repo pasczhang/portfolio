@@ -20,12 +20,17 @@ function tenorLabel(days: number): string {
 
 export function toHoldingRows(positions: BookPosition[], asOf: string): HoldingRow[] {
   const aum = positions.reduce((s, p) => s + p.amortizedCost, 0) || 1;
+  const issuerAmt: Record<string, number> = {};
+  for (const p of positions) issuerAmt[p.counterparty] = (issuerAmt[p.counterparty] ?? 0) + p.amortizedCost;
   return positions.map((p) => {
     const days = residualDays(p, asOf);
+    const navWeight = (p.amortizedCost / aum) * 100;
     return {
       security_id: p.securityId,
       instrument: p.assetName,
       product_type: productTypeOf(p.assetType),
+      asset_type: p.assetType,
+      isin: p.isin || "—",
       counterparty: p.counterparty,
       value_date: p.issueDate,
       maturity_date: p.maturityDate,
@@ -36,7 +41,10 @@ export function toHoldingRows(positions: BookPosition[], asOf: string): HoldingR
       shadow_mtm: p.shadowMtm,
       wam_contribution: Number(((p.amortizedCost / aum) * days).toFixed(2)),
       wam_days: days,
-      weight_pct: Number(((p.amortizedCost / aum) * 100).toFixed(2)),
+      weight_pct: Number(navWeight.toFixed(2)),
+      nav_weight_pct: Number(navWeight.toFixed(2)),
+      issuer_weight_pct: Number(((issuerAmt[p.counterparty] / aum) * 100).toFixed(2)),
+      rating: p.rating,
     };
   });
 }

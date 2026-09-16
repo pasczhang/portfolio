@@ -2,24 +2,45 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import { usePathname } from "next/navigation";
-import { Bell, ChevronDown, Moon, Sun, UserRound } from "lucide-react";
+import {
+  Bell,
+  Calculator,
+  CalendarClock,
+  ChevronDown,
+  FileBarChart,
+  Moon,
+  PieChart,
+  Scale,
+  ScrollText,
+  Sun,
+  UserRound,
+  Wallet,
+} from "lucide-react";
 import { FUNDS, useDesk } from "@/components/layout/DeskProvider";
 import { useBook } from "@/components/layout/BookProvider";
 import { cn } from "@/lib/utils";
 import { num } from "@/lib/format";
 
-const TABS = [
-  { href: "/workbench", zh: "事前试算", en: "Pre-Trade Compliance", badge: "8.2" },
-  { href: "/nav", zh: "双轨估值", en: "Dual-Track Valuation", badge: "NAV" },
-  { href: "/ladder", zh: "现金流日历", en: "Cash Ladder", badge: "T+0" },
-  { href: "/reports", zh: "合规与报表", en: "SFC Reports & Factsheet", badge: "A4" },
+const TABS: {
+  href: string;
+  zh: string;
+  en: string;
+  badge: string;
+  Icon: ComponentType<{ className?: string }>;
+  match?: string[];
+}[] = [
+  { href: "/cash", zh: "头寸计算", en: "Cash Position", badge: "T+0 / T+1", Icon: Wallet },
+  { href: "/analysis", zh: "持仓分析", en: "Holdings Analysis", badge: "% of NAV", Icon: PieChart, match: ["/portfolio"] },
+  { href: "/trading", zh: "交易记录", en: "Trade Records", badge: "Blotter", Icon: ScrollText },
+  { href: "/workbench", zh: "事前试算", en: "Pre-Trade", badge: "8.2", Icon: Calculator },
+  { href: "/nav", zh: "双轨估值", en: "Valuation", badge: "NAV", Icon: Scale },
+  { href: "/ladder", zh: "现金阶梯", en: "Cash Ladder", badge: "T+0", Icon: CalendarClock },
+  { href: "/reports", zh: "Factsheet 月报", en: "Reports", badge: "A4", Icon: FileBarChart },
 ];
 
 const MORE = [
-  { href: "/portfolio", label: "Holdings" },
-  { href: "/trading", label: "Trade Blotter" },
   { href: "/analytics", label: "Analytics" },
   { href: "/compliance", label: "SFC Desk" },
   { href: "/funds", label: "Funds" },
@@ -68,10 +89,10 @@ export function GlobalHeader() {
   return (
     <header
       ref={wrap}
-      className="print:hidden sticky top-0 z-40 grid h-14 grid-cols-[minmax(220px,1.1fr)_auto_minmax(240px,1fr)] items-center gap-3 border-b border-border bg-background/80 px-3 backdrop-blur-md"
+      className="print:hidden sticky top-0 z-40 grid h-14 grid-cols-[minmax(180px,0.9fr)_minmax(0,1.6fr)_auto] items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-md"
     >
-      <div className="flex min-w-0 items-center gap-3">
-        <Link href="/workbench" className="flex shrink-0 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <Link href="/cash" className="flex shrink-0 items-center gap-2">
           <Image
             src="/brand/balance-mark.png"
             alt="Balance Asset Management"
@@ -80,12 +101,12 @@ export function GlobalHeader() {
             className="h-8 w-8 rounded-md object-cover ring-1 ring-white/10"
             priority
           />
-          <span className="hidden leading-tight sm:block">
+          <span className="hidden leading-tight lg:block">
             <span className="block text-[10px] uppercase tracking-[0.16em] text-amber-500">Balance</span>
             <span className="block text-xs font-semibold">Fixed Income PMS</span>
           </span>
         </Link>
-        <span className="hidden h-8 w-px bg-[hsl(var(--border))] sm:block" />
+        <span className="hidden h-8 w-px bg-[hsl(var(--border))] xl:block" />
         <div className="min-w-0">
           <select
             className="h-8 max-w-full truncate rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 text-[11px]"
@@ -111,37 +132,41 @@ export function GlobalHeader() {
             >
               {feedSource === "import" ? "IMPORTED" : "SAMPLE"}
             </span>
-            <span className="hidden lg:inline">{fund.shortName}</span>
+            <span className="hidden 2xl:inline">{fund.ccy}</span>
           </p>
         </div>
       </div>
 
-      <nav className="flex h-14 items-stretch justify-center gap-0.5">
+      <nav className="flex h-14 min-w-0 items-stretch justify-start gap-0 overflow-x-auto">
         {TABS.map((tab) => {
-          const active = pathname === tab.href || (tab.href === "/workbench" && pathname === "/");
+          const active =
+            pathname === tab.href ||
+            (tab.href === "/workbench" && pathname === "/") ||
+            Boolean(tab.match?.includes(pathname));
           return (
             <Link
               key={tab.href}
               href={tab.href}
               className={cn(
-                "flex min-w-[92px] flex-col items-center justify-center border-b-2 px-2 text-center",
+                "flex min-w-[88px] shrink-0 flex-col items-center justify-center border-b-2 px-1.5 text-center",
                 active
                   ? "border-amber-500 bg-amber-500/10 text-amber-300"
                   : "border-transparent text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]",
               )}
             >
               <span className="flex items-center gap-1 text-[11px] font-medium">
+                <tab.Icon className="h-3 w-3" />
                 {tab.zh}
-                <span className="rounded bg-[hsl(var(--muted))] px-1 font-mono text-[9px]">{tab.badge}</span>
+                <span className="rounded bg-[hsl(var(--muted))] px-1 font-mono text-[8px]">{tab.badge}</span>
               </span>
-              <span className="hidden text-[9px] opacity-70 xl:block">{tab.en}</span>
+              <span className="hidden text-[8px] opacity-70 xl:block">{tab.en}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className="flex items-center justify-end gap-2">
-        <div className="hidden items-center gap-1.5 font-mono text-[10px] lg:flex">
+      <div className="flex items-center justify-end gap-1.5">
+        <div className="hidden items-center gap-1 font-mono text-[10px] 2xl:flex">
           <span className={cn("rounded border border-[hsl(var(--border))] px-1.5 py-0.5", spreadClass(spread))}>
             Spread: {spread >= 0 ? "+" : ""}
             {spread.toFixed(1)} bps
@@ -195,7 +220,7 @@ export function GlobalHeader() {
           {openAlerts ? (
             <div className="absolute right-0 top-10 z-50 w-72 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 shadow-xl">
               <p className="mb-1 text-[10px] uppercase text-[hsl(var(--muted-foreground))]">未处理预警</p>
-              {(alerts.length ? alerts : [{ id: "empty", title: "暂无未处理预警", severity: "ok" }]).map(
+              {(alerts.length ? alerts : [{ id: "empty", title: "暂无未处理预警", severity: "ok" } as AlertItem]).map(
                 (a) => (
                   <p key={a.id} className="border-t border-[hsl(var(--border))] py-1.5 text-[11px]">
                     {a.title}
@@ -226,18 +251,6 @@ export function GlobalHeader() {
               <p className="mt-1 font-mono">
                 {fund.code} · {fund.ccy} · session {feedSource === "import" ? "IMPORTED" : "SAMPLE"}
               </p>
-              <div className="mt-2 border-t border-[hsl(var(--border))] pt-2">
-                {MORE.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="block py-1 hover:text-amber-400"
-                    onClick={() => setOpenUser(false)}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </div>
             </div>
           ) : null}
         </div>
