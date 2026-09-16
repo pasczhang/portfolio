@@ -44,10 +44,10 @@ function statusTone(status: string): "ok" | "watch" | "breach" {
   return "breach";
 }
 
-export function ReportingDesk() {
+export function ReportingDesk({ embedded = false }: { embedded?: boolean }) {
   const { fund, role } = useDesk();
   const [asOf, setAsOf] = useState(PRODUCT_AS_OF);
-  const [tab, setTab] = useState<"compliance" | "factsheet">("compliance");
+  const [tab, setTab] = useState<"compliance" | "factsheet">(embedded ? "factsheet" : "compliance");
   const [officer, setOfficer] = useState("Chan Wai-ling");
   const [notes, setNotes] = useState("");
   const [commentary, setCommentary] = useState("");
@@ -89,12 +89,7 @@ export function ReportingDesk() {
     downloadText(`SFC_8.2_WINGS_${fund.code}_${data.as_of}.csv`, reportToCsv(brandedSnap), "text/csv;charset=utf-8");
   }
 
-  return (
-    <AppShell
-      title="合规与报表"
-      subtitle={`${fund.name} · ${fund.shortName} · 8.2 监管底稿 / Factsheet`}
-      source={source}
-      actions={
+  const actions = (
         <div className="flex flex-wrap items-center gap-1 print:hidden">
           <Button variant={tab === "compliance" ? "accent" : "outline"} onClick={() => setTab("compliance")}>
             监管审查
@@ -115,8 +110,10 @@ export function ReportingDesk() {
             导出 CSV
           </Button>
         </div>
-      }
-    >
+  );
+
+  const body = (
+    <>
       <Card className="flex flex-wrap items-end gap-3 p-3 print:hidden">
         <div>
           <Label>As-of / 月末截取</Label>
@@ -407,6 +404,29 @@ export function ReportingDesk() {
           </footer>
         </div>
       )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">Factsheet 月报生成 / 导出</h2>
+          {actions}
+        </div>
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <AppShell
+      title="合规与报表"
+      subtitle={`${fund.name} · ${fund.shortName} · 8.2 监管底稿 / Factsheet`}
+      source={source}
+      actions={actions}
+    >
+      {body}
     </AppShell>
   );
 }

@@ -6,14 +6,13 @@ import { useEffect, useRef, useState, type ComponentType } from "react";
 import { usePathname } from "next/navigation";
 import {
   Bell,
+  Building2,
   Calculator,
-  CalendarClock,
-  ChevronDown,
-  FileBarChart,
   Moon,
   PieChart,
   Scale,
   ScrollText,
+  ShieldCheck,
   Sun,
   UserRound,
   Wallet,
@@ -27,36 +26,41 @@ const TABS: {
   href: string;
   zh: string;
   en: string;
-  badge: string;
+  badge?: string;
   Icon: ComponentType<{ className?: string }>;
   match?: string[];
 }[] = [
-  { href: "/cash", zh: "头寸计算", en: "Cash Position", badge: "T+0 / T+1", Icon: Wallet },
+  { href: "/cash", zh: "头寸计算", en: "Cash Position", badge: "T+0/T+1", Icon: Wallet },
   { href: "/analysis", zh: "持仓分析", en: "Holdings Analysis", badge: "% of NAV", Icon: PieChart, match: ["/portfolio"] },
   { href: "/trading", zh: "交易记录", en: "Trade Records", badge: "Blotter", Icon: ScrollText },
-  { href: "/workbench", zh: "事前试算", en: "Pre-Trade", badge: "8.2", Icon: Calculator },
-  { href: "/nav", zh: "双轨估值", en: "Valuation", badge: "NAV", Icon: Scale },
-  { href: "/ladder", zh: "现金阶梯", en: "Cash Ladder", badge: "T+0", Icon: CalendarClock },
-  { href: "/reports", zh: "Factsheet 月报", en: "Reports", badge: "A4", Icon: FileBarChart },
-];
-
-const MORE = [
-  { href: "/analytics", label: "Analytics" },
-  { href: "/compliance", label: "SFC Desk" },
-  { href: "/funds", label: "Funds" },
+  { href: "/workbench", zh: "事前试算", en: "Pre-Trade", badge: "What-if", Icon: Calculator },
+  { href: "/nav", zh: "双轨估值", en: "Dual Valuation", badge: "NAV", Icon: Scale },
+  {
+    href: "/compliance",
+    zh: "SFC合规台",
+    en: "SFC Desk",
+    badge: "8.2",
+    Icon: ShieldCheck,
+    match: ["/reports"],
+  },
+  { href: "/funds", zh: "多基金总览", en: "Funds", badge: "USD/HKD", Icon: Building2 },
 ];
 
 type AlertItem = { id: string; title: string; severity: string };
 
 function spreadClass(bps: number) {
   const abs = Math.abs(bps);
-  if (abs > 50) return "text-red-400 animate-pulse";
-  if (abs >= 25) return "text-amber-400";
-  return "text-emerald-400";
+  if (abs > 50) return "border-red-500/50 text-red-400 animate-pulse";
+  if (abs >= 25) return "border-amber-500/50 text-amber-400";
+  return "border-emerald-500/40 text-emerald-400";
 }
 
 function wlaClass(pct: number) {
-  return pct >= 20 ? "text-emerald-400" : "text-red-400";
+  return pct >= 20 ? "border-emerald-500/40 text-emerald-400" : "border-red-500/50 text-red-400";
+}
+
+function wamClass(days: number) {
+  return days <= 60 ? "border-emerald-500/40 text-emerald-400" : "border-red-500/50 text-red-400";
 }
 
 export function GlobalHeader() {
@@ -65,11 +69,11 @@ export function GlobalHeader() {
   const { metrics, compliance, origin } = useBook();
   const spread = num(metrics.deviationBps);
   const wla = num(metrics.wlaPct);
+  const wam = num(metrics.wamDays);
   const feedSource = origin === "import" ? "import" : "mock";
   const alerts = compliance.alerts.map((a) => ({ id: a.id, title: a.title, severity: a.severity }));
   const [openAlerts, setOpenAlerts] = useState(false);
   const [openUser, setOpenUser] = useState(false);
-  const [openMore, setOpenMore] = useState(false);
   const wrap = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -77,7 +81,6 @@ export function GlobalHeader() {
       if (!wrap.current?.contains(ev.target as Node)) {
         setOpenAlerts(false);
         setOpenUser(false);
-        setOpenMore(false);
       }
     }
     document.addEventListener("mousedown", onDoc);
@@ -89,126 +92,95 @@ export function GlobalHeader() {
   return (
     <header
       ref={wrap}
-      className="print:hidden sticky top-0 z-40 grid h-14 grid-cols-[minmax(180px,0.9fr)_minmax(0,1.6fr)_auto] items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-md"
+      className="print:hidden sticky top-0 z-40 flex h-14 items-stretch gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-md"
     >
-      <div className="flex min-w-0 items-center gap-2">
-        <Link href="/cash" className="flex shrink-0 items-center gap-2">
-          <Image
-            src="/brand/balance-mark.png"
-            alt="Balance Asset Management"
-            width={32}
-            height={32}
-            className="h-8 w-8 rounded-md object-cover ring-1 ring-white/10"
-            priority
-          />
-          <span className="hidden leading-tight lg:block">
-            <span className="block text-[10px] uppercase tracking-[0.16em] text-amber-500">Balance</span>
-            <span className="block text-xs font-semibold">Fixed Income PMS</span>
-          </span>
-        </Link>
-        <span className="hidden h-8 w-px bg-[hsl(var(--border))] xl:block" />
-        <div className="min-w-0">
-          <select
-            className="h-8 max-w-full truncate rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 text-[11px]"
-            value={fundId}
-            onChange={(e) => setFundId(e.target.value)}
-            aria-label="Fund selector"
-          >
-            {FUNDS.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-          <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] text-[hsl(var(--muted-foreground))]">
-            As-of {asOf}
-            <span
-              className={cn(
-                "rounded border px-1",
-                feedSource === "import"
-                  ? "border-sky-500/40 text-sky-400"
-                  : "border-amber-500/40 text-amber-400",
-              )}
-            >
-              {feedSource === "import" ? "IMPORTED" : "SAMPLE"}
-            </span>
-            <span className="hidden 2xl:inline">{fund.ccy}</span>
-          </p>
-        </div>
-      </div>
+      <Link href="/cash" className="flex shrink-0 items-center gap-2 pr-1">
+        <Image
+          src="/brand/balance-mark.png"
+          alt="Balance Asset Management"
+          width={32}
+          height={32}
+          className="h-8 w-8 rounded-md object-cover ring-1 ring-white/10"
+          priority
+        />
+        <span className="hidden leading-tight xl:block">
+          <span className="block text-[10px] uppercase tracking-[0.16em] text-amber-500">Balance</span>
+          <span className="block text-xs font-semibold">Fixed Income PMS</span>
+        </span>
+      </Link>
 
-      <nav className="flex h-14 min-w-0 items-stretch justify-start gap-0 overflow-x-auto">
+      <nav className="flex min-w-0 flex-1 items-stretch justify-center overflow-x-auto">
         {TABS.map((tab) => {
           const active =
             pathname === tab.href ||
+            pathname.startsWith(`${tab.href}/`) ||
             (tab.href === "/workbench" && pathname === "/") ||
-            Boolean(tab.match?.includes(pathname));
+            Boolean(tab.match?.some((p) => pathname === p || pathname.startsWith(`${p}/`)));
           return (
             <Link
               key={tab.href}
               href={tab.href}
+              aria-current={active ? "page" : undefined}
               className={cn(
-                "flex min-w-[88px] shrink-0 flex-col items-center justify-center border-b-2 px-1.5 text-center",
+                "flex min-w-[92px] shrink-0 flex-col items-center justify-center border-b-2 px-2 text-center transition-colors",
                 active
-                  ? "border-amber-500 bg-amber-500/10 text-amber-300"
-                  : "border-transparent text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]",
+                  ? "border-amber-500 bg-amber-500/15 text-amber-200 shadow-[inset_0_-2px_0_0_rgb(245,158,11)]"
+                  : "border-transparent text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-foreground",
               )}
             >
-              <span className="flex items-center gap-1 text-[11px] font-medium">
+              <span className="flex items-center gap-1 text-[11px] font-semibold">
                 <tab.Icon className="h-3 w-3" />
                 {tab.zh}
-                <span className="rounded bg-[hsl(var(--muted))] px-1 font-mono text-[8px]">{tab.badge}</span>
+                {tab.badge ? (
+                  <span className="rounded bg-[hsl(var(--muted))] px-1 font-mono text-[8px] font-normal">{tab.badge}</span>
+                ) : null}
               </span>
-              <span className="hidden text-[8px] opacity-70 xl:block">{tab.en}</span>
+              <span className="hidden text-[8px] font-normal opacity-70 2xl:block">{tab.en}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className="flex items-center justify-end gap-1.5">
-        <div className="hidden items-center gap-1 font-mono text-[10px] 2xl:flex">
-          <span className={cn("rounded border border-[hsl(var(--border))] px-1.5 py-0.5", spreadClass(spread))}>
-            Spread: {spread >= 0 ? "+" : ""}
+      <div className="flex shrink-0 items-center justify-end gap-1.5">
+        <div className="flex flex-col items-end gap-0.5">
+          <div className="flex overflow-hidden rounded-md border border-[hsl(var(--border))]" role="group" aria-label="Fund selector">
+            {FUNDS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setFundId(f.id)}
+                className={cn(
+                  "px-2 py-1 font-mono text-[10px] font-semibold",
+                  fundId === f.id ? "bg-amber-500 text-black" : "bg-transparent text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]",
+                )}
+              >
+                {f.ccy} Fund
+              </button>
+            ))}
+          </div>
+          <p className="hidden max-w-[160px] truncate font-mono text-[9px] text-[hsl(var(--muted-foreground))] lg:block">
+            {fund.shortName} · {asOf} · {feedSource === "import" ? "IMPORTED" : "SAMPLE"}
+          </p>
+        </div>
+
+        <div className="hidden items-center gap-1 font-mono text-[10px] lg:flex">
+          <span className={cn("rounded border px-1.5 py-0.5", spreadClass(spread))}>
+            Spread {spread >= 0 ? "+" : ""}
             {spread.toFixed(1)} bps
           </span>
-          <span className={cn("rounded border border-[hsl(var(--border))] px-1.5 py-0.5", wlaClass(wla))}>
-            WLA: {wla.toFixed(1)}%
-          </span>
+          <span className={cn("rounded border px-1.5 py-0.5", wlaClass(wla))}>WLA {wla.toFixed(1)}%</span>
+          <span className={cn("rounded border px-1.5 py-0.5", wamClass(wam))}>WAM {wam.toFixed(1)}d</span>
         </div>
-        <div className="relative">
-          <button
-            type="button"
-            className="flex items-center gap-0.5 rounded-md border border-[hsl(var(--border))] px-2 py-1 text-[10px]"
-            onClick={() => {
-              setOpenMore((v) => !v);
-              setOpenAlerts(false);
-              setOpenUser(false);
-            }}
-          >
-            更多
-            <ChevronDown className="h-3 w-3" />
-          </button>
-          {openMore ? (
-            <div className="absolute right-0 top-10 z-50 w-44 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-[11px] shadow-xl">
-              {MORE.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="block py-1 hover:text-amber-400"
-                  onClick={() => setOpenMore(false)}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          ) : null}
-        </div>
+
         <div className="relative">
           <button
             type="button"
             className="relative rounded-md border border-[hsl(var(--border))] p-1.5"
             aria-label="Alert center"
-            onClick={() => setOpenAlerts((v) => !v)}
+            onClick={() => {
+              setOpenAlerts((v) => !v);
+              setOpenUser(false);
+            }}
           >
             <Bell className="h-3.5 w-3.5" />
             {alertCount > 0 ? (
@@ -241,7 +213,14 @@ export function GlobalHeader() {
           {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
         </button>
         <div className="relative">
-          <button type="button" className="rounded-md border border-[hsl(var(--border))] p-1.5" onClick={() => setOpenUser((v) => !v)}>
+          <button
+            type="button"
+            className="rounded-md border border-[hsl(var(--border))] p-1.5"
+            onClick={() => {
+              setOpenUser((v) => !v);
+              setOpenAlerts(false);
+            }}
+          >
             <UserRound className="h-3.5 w-3.5" />
           </button>
           {openUser ? (
@@ -249,7 +228,7 @@ export function GlobalHeader() {
               <p className="font-medium">Desk User</p>
               <p className="text-[hsl(var(--muted-foreground))]">{fund.name}</p>
               <p className="mt-1 font-mono">
-                {fund.code} · {fund.ccy} · session {feedSource === "import" ? "IMPORTED" : "SAMPLE"}
+                {fund.code} · {fund.ccy}
               </p>
             </div>
           ) : null}

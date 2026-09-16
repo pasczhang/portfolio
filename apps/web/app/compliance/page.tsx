@@ -6,6 +6,7 @@ import { useBook } from "@/components/layout/BookProvider";
 import { StatusPill, ProgressBar } from "@/components/desk/meters";
 import { num, pctFmt, money } from "@/lib/format";
 import { Card } from "@/components/ui/card";
+import { ReportingDesk } from "@/components/reports/ReportingDesk";
 
 export default function CompliancePage() {
   const { fund } = useDesk();
@@ -14,7 +15,7 @@ export default function CompliancePage() {
   const liqCards = data.cards.filter((c) => ["DLA", "WLA"].includes(c.code));
 
   return (
-    <AppShell title="SFC Compliance" subtitle={`${fund.name} · SFC 单位信托守则第 8.2 章`} source={source}>
+    <AppShell title="SFC合规台" subtitle={`${fund.name} · SFC 8.2 监管指标 · Factsheet 月报生成/导出`} source={source}>
       <p className="font-mono text-[11px] text-[hsl(var(--muted-foreground))]">
         {fund.code} · {fund.shortName} · as of {data.as_of} · AUM {money(data.aum, fund.ccy)}
       </p>
@@ -114,6 +115,8 @@ export default function CompliancePage() {
           </tbody>
         </table>
       </Card>
+
+      <ReportingDesk embedded />
     </AppShell>
   );
 }

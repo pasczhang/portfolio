@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useDesk } from "@/components/layout/DeskProvider";
+import { FUNDS, useDesk } from "@/components/layout/DeskProvider";
 import {
   deriveCashLadder,
   deriveCompliance,
@@ -41,6 +41,7 @@ type BookState = {
   origin: BookOrigin;
   trades: DeskTrade[];
   cashAdj: CashAdj;
+  holdingsStore: HoldingsStored;
   applyImport: (incoming: BookPosition[], mode: "overwrite" | "merge") => void;
   resetDemo: () => void;
   addTrade: (trade: DeskTrade) => void;
@@ -146,8 +147,8 @@ export function BookProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<BookState>(
-    () => ({ positions, origin, trades, cashAdj, applyImport, resetDemo, addTrade, applyCashAdj }),
-    [positions, origin, trades, cashAdj, applyImport, resetDemo, addTrade, applyCashAdj],
+    () => ({ positions, origin, trades, cashAdj, holdingsStore, applyImport, resetDemo, addTrade, applyCashAdj }),
+    [positions, origin, trades, cashAdj, holdingsStore, applyImport, resetDemo, addTrade, applyCashAdj],
   );
 
   return <BookContext.Provider value={value}>{children}</BookContext.Provider>;
@@ -157,7 +158,7 @@ export function useBook() {
   const ctx = useContext(BookContext);
   if (!ctx) throw new Error("useBook must be used within BookProvider");
   const { fund, asOf } = useDesk();
-  const { positions, origin, trades, cashAdj, applyImport, resetDemo, addTrade, applyCashAdj } = ctx;
+  const { positions, origin, trades, cashAdj, holdingsStore, applyImport, resetDemo, addTrade, applyCashAdj } = ctx;
   const metrics = useMemo(() => computeMetrics(positions, asOf), [positions, asOf]);
   const holdings = useMemo(() => toHoldingRows(positions, asOf), [positions, asOf]);
   const workbench = useMemo(() => deriveWorkbench(positions, fund, asOf), [positions, fund, asOf]);
@@ -170,11 +171,25 @@ export function useBook() {
     [positions, trades, cashAdj, asOf],
   );
   const source = origin === "import" ? ("import" as const) : ("mock" as const);
+  const fundSnapshots = useMemo(
+    () =>
+      FUNDS.map((f) => {
+        const stored = holdingsStore[f.id];
+        const book = stored?.positions ?? sampleBookFor(f.ccy);
+        return {
+          fund: f,
+          origin: stored?.origin ?? ("demo" as const),
+          metrics: computeMetrics(book, asOf),
+        };
+      }),
+    [holdingsStore, asOf],
+  );
   return {
     positions,
     origin,
     source,
     metrics,
+    fundSnapshots,
     holdings,
     workbench,
     dualNav,
