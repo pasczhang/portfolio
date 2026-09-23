@@ -1,4 +1,5 @@
-import { residualDays } from "@/lib/holdings/metrics";
+import { residualDays, computeMaturityLadder, groupByIssuer } from "@/lib/holdings/calculator";
+import { isBookCash } from "@/lib/holdings/cashPosition";
 import type { BookPosition } from "@/lib/holdings/types";
 
 export const PRIVILEGED_ISSUERS = /treasury|hkma|federal reserve|sovereign|hk government/i;
@@ -21,21 +22,17 @@ export const MATURITY_BUCKETS = [
 ] as const;
 
 export function chartClassOf(p: BookPosition, asOf: string): keyof typeof CLASS_CHART_LABEL {
+  if (isBookCash(p)) return "Cash";
   if (p.assetType === "NCD") return "NCD";
   if (p.assetType === "Govt Bills") return "Govt Bills";
   if (p.assetType === "Commercial Paper") return "Commercial Paper";
   if (p.assetType === "Reverse Repo") return "Reverse Repo";
+  if (p.assetType === "Cash / Bank Deposit") return "Time Deposit";
   return residualDays(p, asOf) <= 1 ? "Cash" : "Time Deposit";
 }
 
 export function issuerWeightMap(positions: BookPosition[]): Record<string, number> {
-  const aum = positions.reduce((s, p) => s + p.amortizedCost, 0) || 1;
-  const map: Record<string, number> = {};
-  for (const p of positions) {
-    map[p.counterparty] = (map[p.counterparty] ?? 0) + p.amortizedCost;
-  }
-  for (const k of Object.keys(map)) map[k] = (map[k] / aum) * 100;
-  return map;
+  return Object.fromEntries(groupByIssuer(positions).map((g) => [g.key, g.pct]));
 }
 
 export function issuerAlertLevel(weightPct: number, issuer: string): "ok" | "watch" | "breach" {
@@ -60,26 +57,15 @@ export function allocationByClass(positions: BookPosition[], asOf: string) {
 }
 
 export function maturityBuckets(positions: BookPosition[], asOf: string) {
-  const aum = positions.reduce((s, p) => s + p.amortizedCost, 0) || 1;
-  return MATURITY_BUCKETS.map((b) => {
-    const value = positions
-      .filter((p) => {
-        const d = residualDays(p, asOf);
-        return d >= b.min && d <= b.max;
-      })
-      .reduce((s, p) => s + p.amortizedCost, 0);
-    return { bucket: b.label, value, pct: (value / aum) * 100 };
-  });
+  return computeMaturityLadder(positions, asOf).map((r) => ({
+    bucket: r.bucket,
+    value: r.total,
+    pct: r.pct,
+  }));
 }
 
 export function topIssuers(positions: BookPosition[], n = 5) {
-  const aum = positions.reduce((s, p) => s + p.amortizedCost, 0) || 1;
-  const map = new Map<string, number>();
-  for (const p of positions) {
-    map.set(p.counterparty, (map.get(p.counterparty) ?? 0) + p.amortizedCost);
-  }
-  return Array.from(map.entries())
-    .sort((a, b) => b[1] - a[1])
+  return groupByIssuer(positions)
     .slice(0, n)
-    .map(([issuer, value]) => ({ issuer, value, pct: (value / aum) * 100 }));
+    .map((g) => ({ issuer: g.key, value: g.amount, pct: g.pct }));
 }

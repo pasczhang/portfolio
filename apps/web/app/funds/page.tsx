@@ -1,17 +1,19 @@
 "use client";
 
-import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { useBook } from "@/components/layout/BookProvider";
 import { useDesk } from "@/components/layout/DeskProvider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { DangerZoneCard } from "@/components/settings/DangerZoneCard";
+import { usePermissions } from "@/lib/auth/usePermissions";
 import { daysFmt, moneyFull, pctFmt } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export default function FundsPage() {
   const { fund, setFundId } = useDesk();
   const { fundSnapshots } = useBook();
+  const { canFundReset } = usePermissions();
   const totalNames = fundSnapshots.length;
 
   return (
@@ -79,11 +81,7 @@ export default function FundsPage() {
           );
         })}
       </div>
-      <p className="text-[11px] text-[hsl(var(--muted-foreground))]">
-        <Link className="text-amber-500 hover:underline" href="/workbench">
-          进入事前试算（独立模块） →
-        </Link>
-      </p>
+      {canFundReset ? <DangerZoneCard /> : null}
     </AppShell>
   );
 }

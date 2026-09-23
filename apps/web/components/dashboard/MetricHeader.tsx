@@ -18,8 +18,9 @@ function toneForFloor(value: number, floor: number): AlertTone {
 }
 
 function deviationTone(bps: number): AlertTone {
-  if (bps >= 50) return "breach";
-  if (bps >= 25) return "watch";
+  const abs = Math.abs(bps);
+  if (abs >= 50) return "breach";
+  if (abs >= 25) return "watch";
   return "ok";
 }
 
@@ -72,7 +73,6 @@ export function MetricHeader({
   const dla = num(data.dla_pct);
   const wla = num(data.wla_pct);
   const bps = num(data.deviation_bps);
-  const status = data.deviation_status.toLowerCase();
 
   return (
     <section className="overflow-hidden rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))]">
@@ -85,7 +85,7 @@ export function MetricHeader({
         </div>
         <div className="flex items-center gap-2">
           <Badge tone={live === "ws" ? "ok" : "watch"}>{live === "ws" ? "LIVE WS" : "POLL 15s"}</Badge>
-          <Badge tone={status === "critical" ? "breach" : status === "warning" ? "watch" : "ok"}>
+          <Badge tone={deviationTone(bps)}>
             COLLAR {data.deviation_status}
           </Badge>
         </div>
@@ -97,7 +97,7 @@ export function MetricHeader({
         <Tile label="WAM" value={daysFmt(wam)} hint="目标 ≤ 60 天" tone={toneForCeiling(wam, data.wam_limit)} />
         <Tile label="WAL" value={daysFmt(wal)} hint="目标 ≤ 120 天" tone={toneForCeiling(wal, data.wal_limit)} />
         <Tile label="DLA" value={pctFmt(dla)} hint="目标 ≥ 10%" tone={toneForFloor(dla, num(data.dla_floor))} />
-        <Tile label="WLA" value={pctFmt(wla)} hint="目标 ≥ 30%" tone={toneForFloor(wla, num(data.wla_floor))} />
+        <Tile label="WLA" value={pctFmt(wla)} hint="SFC ≥ 15% · 内控 ≥ 20%" tone={toneForFloor(wla, num(data.wla_floor))} />
       </div>
     </section>
   );

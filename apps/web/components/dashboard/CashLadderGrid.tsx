@@ -55,7 +55,7 @@ export function CashLadderGrid({ rows, dark }: { rows: CashLadderRow[]; dark: bo
           defaultColDef={{ sortable: true, resizable: true, suppressMovable: true }}
           rowHeight={32}
           headerHeight={34}
-          getRowId={(p) => p.data.tenor}
+          getRowId={(p) => `${p.data.date}|${p.data.tenor}|${p.data.closing_cash}`}
           getRowClass={(p) => (p.data?.tenor === "T+0" ? "font-semibold" : undefined)}
         />
       </div>

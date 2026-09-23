@@ -5,6 +5,11 @@ import type { ComplianceDashboard } from "@/lib/desk-types";
 import type { DualNavSnapshot, DualPosition } from "@/lib/dualNav";
 import { residualDays } from "@/lib/holdings/metrics";
 import { computeMetrics } from "@/lib/holdings/metrics";
+import { wamTenorDays } from "@/lib/engine/durationCalculator";
+import { assetCategoryOf } from "@/lib/holdings/unified";
+import type { AssetCategory } from "@/types/holdings";
+import { runCompliance, WLA_SFC_FLOOR, WLA_INTERNAL_FLOOR, DLA_FLOOR } from "@/lib/engine/complianceEngine";
+import { computeValuation } from "@/lib/engine/valuationEngine";
 import { productTypeOf } from "@/lib/holdings/mapAssetType";
 import { addDays } from "@/lib/holdings/dates";
 import type { BookPosition } from "@/lib/holdings/types";
@@ -12,35 +17,79 @@ import type { ReportSnapshot } from "@/lib/report";
 import type { CashLadderRow, EnginePosition, WorkbenchSnapshot } from "@/types/workbench";
 
 function tenorLabel(days: number): string {
+  if (days <= 0) return "0D";
   if (days <= 1) return "1D";
-  if (days <= 7) return `${days}D`;
-  if (days <= 31) return `${days}D`;
   return `${days}D`;
 }
 
-export function toHoldingRows(positions: BookPosition[], asOf: string): HoldingRow[] {
-  const aum = positions.reduce((s, p) => s + p.amortizedCost, 0) || 1;
+const CATEGORY_LABEL: Record<AssetCategory, string> = {
+  CASH: "Cash",
+  TIME_DEPOSIT: "Time Deposit",
+  REPO: "Repo",
+  BOND: "Bond",
+  OTHER: "Other",
+};
+
+function displayAssetType(p: BookPosition): string {
+  const cat = assetCategoryOf(p);
+  if (cat === "CASH") return "Cash & Bank";
+  if (cat === "TIME_DEPOSIT") return "Time Deposit";
+  if (cat === "REPO") return "Repo";
+  return productTypeOf(p.assetType);
+}
+
+export function resolveOfficialNav(
+  report:
+    | {
+        nav?: number | null;
+        totalNav?: number | null;
+        summary?: { netAssets?: number | null; totalNav?: number | null };
+      }
+    | null
+    | undefined,
+  positions: { amortizedCost: number }[],
+): number {
+  const candidates = [
+    Number(report?.nav),
+    Number(report?.totalNav),
+    Number(report?.summary?.netAssets),
+    Number(report?.summary?.totalNav),
+  ];
+  for (const tape of candidates) {
+    if (Number.isFinite(tape) && tape > 0) return tape;
+  }
+  const assets = positions.reduce((s, p) => s + Number(p.amortizedCost || 0), 0);
+  return assets > 0 ? assets : 1;
+}
+
+export function toHoldingRows(positions: BookPosition[], asOf: string, fundNav?: number | null): HoldingRow[] {
+  const aum = (fundNav && fundNav > 0 ? fundNav : positions.reduce((s, p) => s + p.amortizedCost, 0)) || 1;
   const issuerAmt: Record<string, number> = {};
   for (const p of positions) issuerAmt[p.counterparty] = (issuerAmt[p.counterparty] ?? 0) + p.amortizedCost;
-  return positions.map((p) => {
+  return positions.map((p, i) => {
     const days = residualDays(p, asOf);
+    const wamDays = wamTenorDays(p, asOf);
     const navWeight = (p.amortizedCost / aum) * 100;
+    const cat = assetCategoryOf(p);
     return {
-      security_id: p.securityId,
+      row_key: `${p.securityId}_${p.isin || "NA"}_${p.maturityDate}_${i}`,
+      book_security_id: p.securityId,
+      security_id: p.isin || p.securityId,
       instrument: p.assetName,
-      product_type: productTypeOf(p.assetType),
-      asset_type: p.assetType,
+      product_type: CATEGORY_LABEL[cat],
+      asset_type: displayAssetType(p),
+      asset_category: cat,
       isin: p.isin || "—",
       counterparty: p.counterparty,
       value_date: p.issueDate,
       maturity_date: p.maturityDate,
       coupon_rate_pct: p.couponRatePct,
-      tenor: tenorLabel(days),
-      tenor_days: days,
+      tenor: tenorLabel(wamDays),
+      tenor_days: wamDays,
       amortized_cost: p.amortizedCost,
       shadow_mtm: p.shadowMtm,
-      wam_contribution: Number(((p.amortizedCost / aum) * days).toFixed(2)),
-      wam_days: days,
+      wam_contribution: Number(((p.amortizedCost / aum) * wamDays).toFixed(2)),
+      wam_days: wamDays,
       weight_pct: Number(navWeight.toFixed(2)),
       nav_weight_pct: Number(navWeight.toFixed(2)),
       issuer_weight_pct: Number(((issuerAmt[p.counterparty] / aum) * 100).toFixed(2)),
@@ -114,7 +163,7 @@ export function deriveWorkbench(positions: BookPosition[], fund: CurrentFund, as
     wam_limit: fund.wamLimitDays,
     wal_limit: fund.walLimitDays,
     dla_floor: 10,
-    wla_floor: 20,
+    wla_floor: WLA_SFC_FLOOR,
     cash_ladder: buildWorkbenchLadder(positions, asOf, opening),
     positions: toEnginePositions(positions),
     cash: cashPos.map((p) => ({
@@ -128,8 +177,13 @@ export function deriveWorkbench(positions: BookPosition[], fund: CurrentFund, as
 
 export function deriveDualNav(positions: BookPosition[], fund: CurrentFund, asOf: string): DualNavSnapshot {
   const m = computeMetrics(positions, asOf);
+  const val = computeValuation(positions, asOf);
+  const valued = new Map(val.positions.map((r) => [r.securityId, r]));
   const dualPositions: DualPosition[] = positions.map((p) => {
     const days = residualDays(p, asOf);
+    const row = valued.get(p.securityId);
+    const book = row?.carryingValue ?? p.amortizedCost;
+    const shadow = row?.shadowDirty ?? p.shadowMtm;
     const coupon = p.parValue * (p.couponRatePct / 100) * (days / 365);
     const cf = p.parValue + coupon;
     const spread = p.assetType === "Govt Bills" ? 0 : 0.0025;
@@ -143,10 +197,10 @@ export function deriveDualNav(positions: BookPosition[], fund: CurrentFund, asOf
       rating: p.rating,
       days_to_maturity: days,
       day_count: p.dayCount,
-      amortised_book: p.amortizedCost,
-      shadow_value: p.shadowMtm,
-      diff_amount: p.shadowMtm - p.amortizedCost,
-      diff_bps: p.amortizedCost ? ((p.shadowMtm - p.amortizedCost) / p.amortizedCost) * 10_000 : 0,
+      amortised_book: book,
+      shadow_value: shadow,
+      diff_amount: shadow - book,
+      diff_bps: book ? ((shadow - book) / book) * 10_000 : 0,
       pricing_source: p.assetType === "Govt Bills" ? "BVAL / official" : "Mark-to-Model DCF",
       discount_rate: p.couponRatePct / 100,
       credit_spread: spread,
@@ -156,20 +210,21 @@ export function deriveDualNav(positions: BookPosition[], fund: CurrentFund, asOf
       coupon: p.couponRatePct / 100,
       face: p.parValue,
       cashflows: [{ date: p.maturityDate, days, amount: cf, description: "Maturity redemption" }],
-      model_notes: `${p.assetType} · ${p.dayCount} · as of ${asOf}`,
+      model_notes: `${p.assetType} · ${p.dayCount} · accrued ${row ? row.accrued.toFixed(2) : "—"} · as of ${asOf}`,
     };
   });
-  const abs = Math.abs(m.deviationBps);
-  const status = abs >= 50 ? "BREACH" : abs >= 20 ? "WARNING" : "NORMAL";
+  const abs = Math.abs(m.deviationPct);
   const history = Array.from({ length: 30 }, (_, i) => {
     const date = addDays(asOf, i - 29);
     const wave = 0.00004 * Math.sin(i / 4);
-    const shadow = Number((m.shadowNav + wave).toFixed(5));
+    const shadow = Number((m.shadowNav + wave).toFixed(6));
+    const den = Math.abs(shadow) > 1e-8 ? shadow : 1;
+    const pct = ((1 - shadow) / den) * 100;
     return {
       date,
       accounting_nav: 1,
       shadow_nav: shadow,
-      deviation_bps: Number((((shadow - 1) * 10_000).toFixed(1))),
+      deviation_bps: Number((pct * 100).toFixed(1)),
     };
   });
   return {
@@ -178,23 +233,23 @@ export function deriveDualNav(positions: BookPosition[], fund: CurrentFund, asOf
     kpis: {
       accounting_nav: m.officialNav,
       shadow_nav: m.shadowNav,
-      deviation_ratio: m.deviationBps / 10_000,
-      deviation_pct: m.deviationBps / 100,
+      deviation_ratio: m.deviationPct / 100,
+      deviation_pct: m.deviationPct,
       deviation_bps: m.deviationBps,
-      status,
+      status: m.deviationStatus,
       units: m.aum,
       accounting_aum: m.aum,
-      shadow_aum: positions.reduce((s, p) => s + p.shadowMtm, 0),
+      shadow_aum: val.positions.reduce((s, r) => s + r.shadowDirty, 0),
       cash: m.cash,
     },
     positions: dualPositions,
     history,
-    yellow_bps: 20,
+    yellow_bps: 25,
     red_bps: 50,
     curve_shift_bps: 0,
     spread_widen_bps: 0,
-    vnav_trigger: abs >= 50,
-    report: abs >= 50 ? { fund: fund.code, as_of: asOf, action: "VNAV contingency" } : null,
+    vnav_trigger: abs >= 0.5,
+    report: abs >= 0.5 ? { fund: fund.code, as_of: asOf, action: "VNAV contingency" } : null,
   };
 }
 
@@ -300,8 +355,8 @@ export function deriveCashLadder(positions: BookPosition[], fund: CurrentFund, a
       cash: d.cumulative,
       dla_pct: m.dlaPct,
       wla_pct: m.wlaPct,
-      dla_ok: m.dlaPct >= 10,
-      wla_ok: m.wlaPct >= 20,
+      dla_ok: m.dlaPct >= DLA_FLOOR,
+      wla_ok: m.wlaPct >= WLA_SFC_FLOOR,
     })),
     reinvest,
     calendar_month: month,
@@ -392,7 +447,7 @@ export function deriveReport(positions: BookPosition[], fund: CurrentFund, asOf:
       { metric: "WAM", limit: "≤ 60 Days", actual: `${m.wamDays.toFixed(1)} Days`, actual_num: m.wamDays, status: chk(m.wamDays <= 60), period_min: `${(m.wamDays - 3).toFixed(1)}D`, period_max: `${(m.wamDays + 2).toFixed(1)}D` },
       { metric: "WAL", limit: "≤ 120 Days", actual: `${m.walDays.toFixed(1)} Days`, actual_num: m.walDays, status: chk(m.walDays <= 120), period_min: `${(m.walDays - 4).toFixed(1)}D`, period_max: `${(m.walDays + 3).toFixed(1)}D` },
       { metric: "DLA", limit: "≥ 10%", actual: `${m.dlaPct.toFixed(2)}%`, actual_num: m.dlaPct, status: chk(m.dlaPct >= 10), period_min: `${(m.dlaPct - 1).toFixed(2)}%`, period_max: `${(m.dlaPct + 1).toFixed(2)}%` },
-      { metric: "WLA", limit: "≥ 20%", actual: `${m.wlaPct.toFixed(2)}%`, actual_num: m.wlaPct, status: chk(m.wlaPct >= 20), period_min: `${(m.wlaPct - 1).toFixed(2)}%`, period_max: `${(m.wlaPct + 1).toFixed(2)}%` },
+      { metric: "WLA", limit: "≥ 15% SFC（内控 20%）", actual: `${m.wlaPct.toFixed(2)}%`, actual_num: m.wlaPct, status: chk(m.wlaPct >= WLA_SFC_FLOOR), period_min: `${(m.wlaPct - 1).toFixed(2)}%`, period_max: `${(m.wlaPct + 1).toFixed(2)}%` },
       {
         metric: "单一实体/母集团集中度",
         limit: "≤ 10%（合资格定存 ≤20%）",
@@ -402,7 +457,7 @@ export function deriveReport(positions: BookPosition[], fund: CurrentFund, asOf:
         period_min: "—",
         period_max: "—",
       },
-      { metric: "影子偏离度 |Deviation|", limit: "≤ 50 bps", actual: `${m.deviationBps.toFixed(1)} bps`, actual_num: m.deviationBps, status: chk(Math.abs(m.deviationBps) <= 50), period_min: "—", period_max: "—" },
+      { metric: "影子偏离度 |Deviation|", limit: "≤ 0.50% (50 bps)", actual: `${m.deviationPct.toFixed(4)}% / ${m.deviationBps.toFixed(1)} bps`, actual_num: m.deviationBps, status: chk(Math.abs(m.deviationPct) < 0.5), period_min: "—", period_max: "—" },
       { metric: "非流动资产", limit: "< 10%", actual: "0.00%", actual_num: 0, status: "PASS", period_min: "0.00%", period_max: "0.00%" },
     ],
     exceptions: concBreach && maxIssuer
@@ -434,54 +489,46 @@ export function deriveReport(positions: BookPosition[], fund: CurrentFund, asOf:
 
 export function deriveCompliance(positions: BookPosition[], fund: CurrentFund, asOf: string): ComplianceDashboard {
   const m = computeMetrics(positions, asOf);
-  const aum = m.aum;
-  const byIssuer = new Map<string, { amount: number; hint: string }>();
-  positions.forEach((p) => {
-    const cur = byIssuer.get(p.counterparty) ?? { amount: 0, hint: productTypeOf(p.assetType) };
-    cur.amount += p.amortizedCost;
-    byIssuer.set(p.counterparty, cur);
-  });
-  const concentration = Array.from(byIssuer.entries())
-    .sort((a, b) => b[1].amount - a[1].amount)
-    .map(([issuer, v]) => {
-      const weight = (v.amount / aum) * 100;
-      const privileged = v.hint === "TD" || v.hint === "Repo";
-      const status = privileged ? (weight > 20 ? "BREACH" : weight > 10 ? "WARN" : "PASS") : weight > 10 ? "BREACH" : "PASS";
-      return {
-        issuer,
-        product_hint: v.hint,
-        amount: v.amount,
-        weight_pct: Number(weight.toFixed(2)),
-        limit_10: 10,
-        limit_20: 20,
-        privileged,
-        status,
-      };
-    });
-  const alerts = concentration
-    .filter((c) => c.status !== "PASS")
-    .map((c, i) => ({
-      id: `ALT-${i + 1}`,
-      severity: c.status === "BREACH" ? "HIGH" : "MEDIUM",
-      rule: "ISSUER_CONC",
-      title: `${c.issuer} 集中度 ${c.weight_pct}%`,
-      detail: c.privileged ? "银行存款特许 20% 限额" : "单一发行人 10% 上限",
-      as_of: asOf,
-    }));
-  const maxDays = Math.max(0, ...positions.map((p) => residualDays(p, asOf)));
+  const eng = runCompliance(positions, asOf);
+  const concentration = eng.issuers.map((i) => ({
+    issuer: i.issuer,
+    product_hint: i.hint,
+    amount: i.amount,
+    weight_pct: i.weightPct,
+    limit_10: 10,
+    limit_20: 20,
+    privileged: i.privileged,
+    status: i.status,
+  }));
   return {
     as_of: asOf,
     fund_code: fund.code,
-    aum,
+    aum: m.aum,
     cards: [
-      { code: "WAM", title: "WAM ≤ 60天", value: m.wamDays, unit: "天", limit: 60, status: m.wamDays <= 60 ? "PASS" : "BREACH", detail: "浮动利率按下次重定价；固定利率按到期日" },
-      { code: "WAL", title: "WAL ≤ 120天", value: m.walDays, unit: "天", limit: 120, status: m.walDays <= 120 ? "PASS" : "BREACH", detail: "一律按法律最终到期日加权" },
-      { code: "MAX_RESIDUAL", title: "单一资产最长剩余期限 ≤ 397天", value: maxDays, unit: "天", limit: 397, status: maxDays <= 397 ? "PASS" : "BREACH", detail: "持仓中最长剩余期限" },
-      { code: "DLA", title: "日度流动性资产 DLA ≥ 10%", value: m.dlaPct, unit: "%", limit: 10, status: m.dlaPct >= 10 ? "PASS" : "BREACH", detail: "隔夜现金、ON 存款与逆回购" },
-      { code: "WLA", title: "周度流动性资产 WLA ≥ 20%", value: m.wlaPct, unit: "%", limit: 20, status: m.wlaPct >= 20 ? "PASS" : "BREACH", detail: "含 7 日内到期资产与政府票据" },
+      { code: "WAM", title: "WAM ≤ 60天", value: eng.wamDays, unit: "天", limit: 60, status: eng.wamOk ? "PASS" : "BREACH", detail: "浮动利率按下次重定价；固定利率按到期日（市值加权）" },
+      { code: "WAL", title: "WAL ≤ 120天", value: eng.walDays, unit: "天", limit: 120, status: eng.walOk ? "PASS" : "BREACH", detail: "一律按法律最终到期日加权" },
+      { code: "MAX_RESIDUAL", title: "单一资产最长剩余期限 ≤ 397天", value: eng.maxResidualDays, unit: "天", limit: 397, status: eng.maxResidualOk ? "PASS" : "BREACH", detail: "持仓中最长法律剩余期限" },
+      { code: "DLA", title: "日度流动性资产 DLA ≥ 10%", value: eng.liquidity.dlaPct, unit: "%", limit: DLA_FLOOR, status: eng.liquidity.dlaOk ? "PASS" : "BREACH", detail: "现金 + 1 个工作日内到期 + 政府短期债券" },
+      {
+        code: "WLA",
+        title: `周度流动性资产 WLA ≥ ${WLA_SFC_FLOOR}%`,
+        value: eng.liquidity.wlaPct,
+        unit: "%",
+        limit: WLA_SFC_FLOOR,
+        status: eng.liquidity.wlaSfcOk ? (eng.liquidity.wlaInternalOk ? "PASS" : "WARN") : "BREACH",
+        detail: `DLA + 5 个工作日内到期；SFC ${WLA_SFC_FLOOR}% / 内控 ${WLA_INTERNAL_FLOOR}%`,
+      },
     ],
     concentration,
-    liquidity: { dla_pct: m.dlaPct, wla_pct: m.wlaPct, dla_floor: 10, wla_floor: 20, dla_ok: m.dlaPct >= 10, wla_ok: m.wlaPct >= 20 },
-    alerts,
+    liquidity: {
+      dla_pct: eng.liquidity.dlaPct,
+      wla_pct: eng.liquidity.wlaPct,
+      dla_floor: DLA_FLOOR,
+      wla_floor: WLA_SFC_FLOOR,
+      wla_internal: WLA_INTERNAL_FLOOR,
+      dla_ok: eng.liquidity.dlaOk,
+      wla_ok: eng.liquidity.wlaSfcOk,
+    },
+    alerts: eng.alerts,
   };
 }

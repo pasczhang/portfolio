@@ -380,7 +380,7 @@ export function ReportingDesk({ embedded = false }: { embedded?: boolean }) {
               </thead>
               <tbody>
                 {data.top_holdings.map((h) => (
-                  <tr key={h.security_id} className="border-b border-slate-200">
+                  <tr key={`${h.security_id}#${h.rank}`} className="border-b border-slate-200">
                     <td className="py-1 font-mono">{h.rank}</td>
                     <td>
                       {h.issuer}

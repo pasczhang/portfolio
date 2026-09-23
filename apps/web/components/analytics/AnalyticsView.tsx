@@ -19,6 +19,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { HoldingsActions } from "@/components/holdings/HoldingsActions";
 import { AppShell } from "@/components/layout/AppShell";
 import { useBook } from "@/components/layout/BookProvider";
 import { useDesk } from "@/components/layout/DeskProvider";
@@ -34,9 +35,8 @@ import {
   benchmarkLevel,
   benchmarkName,
   buildCreditMix,
-  buildGeoMix,
+  buildIssuerMix,
   buildLiquiditySeries,
-  buildMaturityLadder,
   buildStressMatrix,
   buildYieldSeries,
   dv01,
@@ -57,7 +57,7 @@ const STATUS_LABEL = { ok: "绿色安全", watch: "黄色预警", breach: "红�
 
 export function AnalyticsView() {
   const { fund } = useDesk();
-  const { metrics, positions, source, asOf } = useBook();
+  const { metrics, positions, source, asOf, snapshot } = useBook();
   const [range, setRange] = useState<AnalyticsRange>("1m");
   const days = RANGE_OPTIONS.find((r) => r.id === range)?.days ?? 30;
   const bench = benchmarkName(fund.ccy);
@@ -75,9 +75,9 @@ export function AnalyticsView() {
     () => buildLiquiditySeries(asOf, Math.min(days, 30), metrics.dlaPct, metrics.wlaPct, `${fund.id}:liq`),
     [asOf, days, metrics.dlaPct, metrics.wlaPct, fund.id],
   );
-  const ladder = useMemo(() => buildMaturityLadder(positions, asOf), [positions, asOf]);
+  const ladder = snapshot.ladder;
   const credit = useMemo(() => buildCreditMix(positions), [positions]);
-  const geo = useMemo(() => buildGeoMix(positions), [positions]);
+  const issuers = useMemo(() => buildIssuerMix(positions), [positions]);
   const stress = useMemo(() => buildStressMatrix(metrics), [metrics]);
 
   const last = yieldRows[yieldRows.length - 1];
@@ -88,34 +88,41 @@ export function AnalyticsView() {
   return (
     <AppShell
       title="分析看板 · Analytics"
-      subtitle={`${fund.name} · 量化投研工作台 · ${bench} 基准 · as of ${asOf}`}
+      subtitle={`${fund.name} · 截面指标均由当前持仓实时加权 · as of ${asOf}`}
       source={source}
       actions={
-        <div className="flex overflow-hidden rounded-md border border-[hsl(var(--border))]">
-          {RANGE_OPTIONS.map((r) => (
-            <Button
-              key={r.id}
-              type="button"
-              variant={range === r.id ? "accent" : "ghost"}
-              className="rounded-none px-2.5"
-              onClick={() => setRange(r.id)}
-            >
-              {r.label}
-            </Button>
-          ))}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <HoldingsActions />
+          <div className="flex overflow-hidden rounded-md border border-[hsl(var(--border))]">
+            {RANGE_OPTIONS.map((r) => (
+              <Button
+                key={r.id}
+                type="button"
+                variant={range === r.id ? "accent" : "ghost"}
+                className="rounded-none px-2.5"
+                onClick={() => setRange(r.id)}
+              >
+                {r.label}
+              </Button>
+            ))}
+          </div>
         </div>
       }
     >
+      <p className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-200">
+        历史收益 / {bench} 曲线无真实时序行情，当前为「基于当前持仓模拟的近{days}天走势」；终点强制对齐截面 7 日年化、DLA、WLA。导入 JSON/CSV
+        覆盖持仓后，WAM、DLA、阶梯与分布立即重算。
+      </p>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Kpi
           kicker="7-Day Yield"
           title="7日年化收益率"
-          value={pctFmt(last?.fund7d ?? y7)}
+          value={pctFmt(y7)}
           footnote={
             <>
               <span className={vsYestBps >= 0 ? "text-emerald-400" : "text-rose-400"}>
                 {vsYestBps >= 0 ? "+" : ""}
-                {vsYestBps} bps vs 昨日
+                {vsYestBps} bps vs 昨日（模拟路径）
               </span>
               <span className="text-[hsl(var(--muted-foreground))]">
                 {" "}
@@ -154,7 +161,7 @@ export function AnalyticsView() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <ChartCard title="收益走势与基准利差" hint={`基金 7 日年化 · ${bench} · 影子市值年化`}>
+        <ChartCard title="收益走势与基准利差" hint={`基于当前持仓模拟的近${days}天走势 · 非交易所历史行情 · 终点=截面年化`}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={yieldRows}>
               <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
@@ -172,7 +179,7 @@ export function AnalyticsView() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="现金流到期阶梯" hint="定期存款 · CD/商票 · 国债/外汇基金票据">
+        <ChartCard title="现金流到期阶梯" hint="截面动态 · 切分 [0,1,7,30,60,90,>90] · 金额=到期本息">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={ladder}>
               <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
@@ -190,7 +197,10 @@ export function AnalyticsView() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="流动性缓冲垫动态监控" hint={`近 ${Math.min(days, 30)} 天 · DLA ≥ ${DLA_FLOOR}% · WLA ≥ ${WLA_FLOOR}%`}>
+        <ChartCard
+          title="流动性缓冲垫动态监控"
+          hint={`DLA/WLA 截面来自持仓到期日；近 ${Math.min(days, 30)} 天面积为模拟路径，终点对齐最新 ${pctFmt(metrics.dlaPct)} / ${pctFmt(metrics.wlaPct)}`}
+        >
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={liqRows}>
               <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
@@ -208,7 +218,7 @@ export function AnalyticsView() {
 
         <Card className="p-3">
           <h2 className="mb-1 text-sm font-semibold">双维度信用与资产穿透</h2>
-          <p className="mb-2 text-[10px] text-[hsl(var(--muted-foreground))]">评级堆叠 · 国家/地区甜甜圈</p>
+          <p className="mb-2 text-[10px] text-[hsl(var(--muted-foreground))]">评级 groupBy · 发行人 groupBy（当前账本）</p>
           <div className="grid h-[280px] gap-2 md:grid-cols-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={credit} layout="vertical" margin={{ left: 8 }}>
@@ -227,15 +237,15 @@ export function AnalyticsView() {
             </ResponsiveContainer>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={geo} dataKey="value" nameKey="name" innerRadius={48} outerRadius={80} paddingAngle={2}>
-                  {geo.map((_, i) => (
+                <Pie data={issuers} dataKey="value" nameKey="name" innerRadius={48} outerRadius={80} paddingAngle={2}>
+                  {issuers.map((_, i) => (
                     <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip
                   {...tooltip}
                   formatter={(value, name) => {
-                    const row = geo.find((g) => g.name === name);
+                    const row = issuers.find((g) => g.name === name);
                     return [`${moneyFull(Number(value ?? 0), fund.ccy)} · ${pctFmt(row?.pct ?? 0)}`, String(name)];
                   }}
                 />

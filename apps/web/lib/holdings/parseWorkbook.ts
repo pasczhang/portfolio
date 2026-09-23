@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { mapSfcAssetType } from "@/lib/holdings/mapAssetType";
+import { uniqueHoldingId, uniquifySecurityIds } from "@/lib/holdings/rowId";
 import { toIsoDate, toNumber } from "@/lib/holdings/dates";
 import type { BookCcy, BookPosition, ParsedHoldingRow } from "@/lib/holdings/types";
 
@@ -79,6 +80,19 @@ export function workbookToRows(buffer: ArrayBuffer): Record<string, unknown>[] {
   return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
 }
 
+export function jsonToRecords(text: string): Record<string, unknown>[] {
+  const trimmed = text.replace(/^\uFEFF/, "").trim();
+  const data = JSON.parse(trimmed) as unknown;
+  if (Array.isArray(data)) return data as Record<string, unknown>[];
+  if (data && typeof data === "object") {
+    const obj = data as Record<string, unknown>;
+    for (const key of ["positions", "holdings", "rows", "data"]) {
+      if (Array.isArray(obj[key])) return obj[key] as Record<string, unknown>[];
+    }
+  }
+  throw new Error("JSON 须为持仓数组，或包含 positions / holdings 数组");
+}
+
 export function parseHoldingRecords(
   records: Record<string, unknown>[],
   fundCcy: BookCcy,
@@ -100,7 +114,8 @@ export function parseHoldingRecords(
     const coupon = toNumber(pick(raw, "couponRatePct"));
     const counterparty = String(pick(raw, "counterparty") ?? "").trim();
     const isin = String(pick(raw, "isin") ?? "").trim();
-    const securityId = String(pick(raw, "securityId") ?? "").trim() || `${slug(name || "POS")}-${rowNumber}`;
+    const securityId =
+      uniqueHoldingId("IMPORT", String(pick(raw, "securityId") ?? "").trim() || `${slug(name || "POS")}-${rowNumber}`, i);
     const rating = String(pick(raw, "rating") ?? "").trim();
     const dayCount = String(pick(raw, "dayCount") ?? "").trim() || (currency === "HKD" ? "Act/365" : "Act/360");
 
@@ -132,7 +147,9 @@ export function parseHoldingRecords(
     if (amortizedCost == null) errors.push("amortizedCost 不能为空");
     if (!maturityDate) errors.push("maturityDate 必须为 YYYY-MM-DD");
     if (pick(raw, "issueDate") && !issueDate) errors.push("issueDate 必须为 YYYY-MM-DD");
-    if (issueDate && maturityDate && maturityDate <= issueDate) errors.push("maturityDate 必须晚于 issueDate");
+    if (issueDate && maturityDate && maturityDate < issueDate && mappedType !== "Cash / Bank Deposit" && mappedType !== "Reverse Repo") {
+      errors.push("maturityDate 必须晚于 issueDate");
+    }
     if (currency && currency !== fundCcy) {
       warnings.push(`币种 ${currency} 与当前基金 ${fundCcy} 不一致`);
     }
@@ -148,14 +165,14 @@ export function parseHoldingRecords(
 }
 
 export function finalizeValidRows(rows: ParsedHoldingRow[], fundCcy: BookCcy): BookPosition[] {
-  return rows
+  const positions = rows
     .filter((r) => r.errors.length === 0)
     .map((r) => {
       const p = r.position;
       const maturityDate = p.maturityDate!;
       const issueDate = p.issueDate || maturityDate;
       return {
-        securityId: p.securityId || `IMP-${r.rowNumber}`,
+        securityId: p.securityId || uniqueHoldingId("IMPORT", `IMP-${r.rowNumber}`, r.rowNumber),
         assetName: p.assetName || "",
         assetType: p.assetType!,
         currency: p.currency || fundCcy,
@@ -173,4 +190,5 @@ export function finalizeValidRows(rows: ParsedHoldingRow[], fundCcy: BookCcy): B
         dayCount: p.dayCount || "Act/365",
       };
     });
+  return uniquifySecurityIds(positions, "IMPORT");
 }

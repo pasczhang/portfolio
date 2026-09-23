@@ -15,6 +15,8 @@ const ALIASES: Record<string, SfcAssetType> = {
   "t-bill": "Govt Bills",
   tbill: "Govt Bills",
   "t bill": "Govt Bills",
+  "treasury bill": "Govt Bills",
+  "corporate bond": "NCD",
   ust: "Govt Bills",
   efb: "Govt Bills",
   "exchange fund bill": "Govt Bills",
@@ -39,7 +41,7 @@ export function mapSfcAssetType(value: string): SfcAssetType | null {
 }
 
 export function productTypeOf(assetType: SfcAssetType): string {
-  if (assetType === "Govt Bills") return "T-Bill";
+  if (assetType === "Govt Bills") return "Treasury Bill";
   if (assetType === "NCD") return "NCD";
   if (assetType === "Commercial Paper") return "CP";
   if (assetType === "Reverse Repo") return "Repo";

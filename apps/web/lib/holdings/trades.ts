@@ -2,10 +2,20 @@ import { PRODUCT_AS_OF } from "@/constants/calendar";
 import { addDays } from "@/lib/holdings/dates";
 import type { BookCcy } from "@/lib/holdings/types";
 
-export const TRADE_SIDES = ["Buy", "Sell", "Deposit", "Maturity", "Repo"] as const;
+export const TRADE_SIDES = ["Buy", "Sell", "Deposit", "Maturity", "Repo", "Subscription", "Redemption"] as const;
 export type TradeSide = (typeof TRADE_SIDES)[number];
 export const SETTLEMENT_STATUSES = ["Settled", "Pending"] as const;
 export type SettlementStatus = (typeof SETTLEMENT_STATUSES)[number];
+
+export const TRADE_SIDE_LABELS: Record<TradeSide, string> = {
+  Buy: "买入 Buy",
+  Sell: "卖出 Sell",
+  Deposit: "定存 Deposit",
+  Maturity: "到期兑付 Maturity",
+  Repo: "回购 Repo",
+  Subscription: "申购 Subscription",
+  Redemption: "赎回 Redemption",
+};
 
 export type DeskTrade = {
   id: string;
@@ -14,10 +24,16 @@ export type DeskTrade = {
   side: TradeSide;
   assetName: string;
   securityId: string;
+  isin?: string;
   counterparty: string;
   amount: number;
   currency: BookCcy;
   yieldPct: number;
+  price?: number;
+  grossAmount?: number;
+  accruedInterest?: number;
+  commission?: number;
+  notes?: string;
   status: SettlementStatus;
 };
 
@@ -26,12 +42,38 @@ export type CashAdj = {
   t0Redemption: number;
   t1Subscription: number;
   t1Redemption: number;
+  t0Expenses: number;
+  t1Expenses: number;
 };
 
-export function defaultCashAdj(ccy: BookCcy): CashAdj {
-  return ccy === "HKD"
-    ? { t0Subscription: 28_000_000, t0Redemption: 12_400_000, t1Subscription: 22_500_000, t1Redemption: 15_200_000 }
-    : { t0Subscription: 4_500_000, t0Redemption: 1_850_000, t1Subscription: 3_200_000, t1Redemption: 2_100_000 };
+export type SimSettle = "T+0" | "T+1";
+export type SimAssetKind = "Govt Bills" | "NCD" | "Cash / Bank Deposit" | "Commercial Paper";
+
+export type CashSimTrade = {
+  id: string;
+  side: "Buy" | "Sell";
+  assetKind: SimAssetKind;
+  name: string;
+  amount: number;
+  settle: SimSettle;
+};
+
+export const SIM_ASSET_KINDS: { id: SimAssetKind; label: string }[] = [
+  { id: "Govt Bills", label: "国债 / 外汇基金票据" },
+  { id: "NCD", label: "同业存单 (CD)" },
+  { id: "Cash / Bank Deposit", label: "定存 (TD)" },
+  { id: "Commercial Paper", label: "商业票据 (CP)" },
+];
+
+export function defaultCashAdj(_ccy?: BookCcy): CashAdj {
+  return {
+    t0Subscription: 0,
+    t0Redemption: 0,
+    t1Subscription: 0,
+    t1Redemption: 0,
+    t0Expenses: 0,
+    t1Expenses: 0,
+  };
 }
 
 const asOf = PRODUCT_AS_OF;
@@ -205,9 +247,22 @@ export function sampleTradesFor(ccy: BookCcy): DeskTrade[] {
 }
 
 export function isCashOutflowSide(side: TradeSide): boolean {
-  return side === "Buy" || side === "Deposit" || side === "Repo";
+  return side === "Buy" || side === "Deposit" || side === "Repo" || side === "Redemption";
 }
 
 export function isCashInflowSide(side: TradeSide): boolean {
-  return side === "Sell" || side === "Maturity";
+  return side === "Sell" || side === "Maturity" || side === "Subscription";
+}
+
+export function suggestedTradeGross(opts: {
+  amount: number;
+  price?: number | null;
+  accruedInterest?: number | null;
+  commission?: number | null;
+}): number {
+  const qty = Number(opts.amount) || 0;
+  const px = opts.price == null || !Number.isFinite(Number(opts.price)) ? 100 : Number(opts.price);
+  const acc = Number(opts.accruedInterest) || 0;
+  const fee = Number(opts.commission) || 0;
+  return qty * (px / 100) + acc + fee;
 }

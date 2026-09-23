@@ -1,18 +1,27 @@
 import { addDays } from "@/lib/holdings/dates";
-import { residualDays } from "@/lib/holdings/metrics";
-import type { BookPosition } from "@/lib/holdings/types";
+import { DLA_FLOOR, WLA_SFC_FLOOR, WLA_INTERNAL_FLOOR } from "@/lib/engine/complianceEngine";
 import {
-  type CashAdj,
-  type DeskTrade,
-  isCashInflowSide,
-  isCashOutflowSide,
-} from "@/lib/holdings/trades";
+  bookAum,
+  computeDlaWla,
+  dayCountBase,
+  maturityProceeds,
+  residualDays,
+} from "@/lib/holdings/calculator";
+import type { BookCcy, BookPosition } from "@/lib/holdings/types";
+import type { CashAdj, CashSimTrade } from "@/lib/holdings/trades";
+import { defaultCashAdj } from "@/lib/holdings/trades";
+import type { TaFlow } from "@/lib/services/types";
+import { taSettleBuckets } from "@/lib/services/marketData/ta";
 
-export type CashLine = {
+export type CashLedgerRow = {
   id: string;
-  label: string;
-  detail: string;
+  type: string;
+  counterparty: string;
   amount: number;
+  direction: "in" | "out";
+  settle: "opening" | "T+0" | "T+1";
+  status: "Locked" | "Pending" | "Applied";
+  simulated: boolean;
 };
 
 export type CashPositionSnapshot = {
@@ -20,116 +29,302 @@ export type CashPositionSnapshot = {
   t1Date: string;
   openingCash: number;
   t0Maturing: number;
-  t0NetSub: number;
-  t0BuySettle: number;
-  t0Available: number;
   t1Maturing: number;
+  t0NetSub: number;
   t1NetSub: number;
-  t1ScheduledOut: number;
+  t0BuySettle: number;
+  t0SellSettle: number;
+  t1BuySettle: number;
+  t1SellSettle: number;
+  t0Expenses: number;
+  t1Expenses: number;
+  autoFee: number;
+  t0Available: number;
   t1Available: number;
   netSubT0: number;
-  fees: number;
   excessOk: boolean;
-  inflows: CashLine[];
-  outflows: CashLine[];
+  dlaPct: number;
+  wlaPct: number;
+  dlaOk: boolean;
+  wlaOk: boolean;
+  ledger: CashLedgerRow[];
+  maturitiesT0: { securityId: string; name: string; counterparty: string; amount: number }[];
+  maturitiesT1: { securityId: string; name: string; counterparty: string; amount: number }[];
 };
 
 const MGMT_FEE = 0.0015;
 const CUSTODY_FEE = 0.0002;
+const WLA_FLOOR = WLA_SFC_FLOOR;
 
-function isDemandCash(p: BookPosition, asOf: string): boolean {
-  const days = residualDays(p, asOf);
+export function isBookCash(p: BookPosition): boolean {
+  if (/CASH-/i.test(p.securityId)) return true;
   if (p.assetType !== "Cash / Bank Deposit") return false;
-  if (/custodian|demand|call/i.test(p.assetName) || /CASH-/i.test(p.securityId)) return days <= 0;
-  return false;
+  return /custodian|demand|call|cash ac|cash at|bank balance|current account|银行存款|托管现金|\bcash\b/i.test(
+    p.assetName,
+  );
 }
 
-function dayCountBase(p: BookPosition): number {
-  return /365/.test(p.dayCount) ? 365 : 360;
+export function isDemandCash(p: BookPosition, _asOf?: string): boolean {
+  return isBookCash(p);
 }
 
-function maturityProceeds(p: BookPosition): number {
-  const interest = p.parValue * (p.couponRatePct / 100) * (1 / dayCountBase(p));
-  return p.parValue + interest;
+/** If the book has no demand-cash line, synthesize one so the holdings grid always shows cash. */
+export function ensureCashHoldingRow(
+  positions: BookPosition[],
+  opts: {
+    cashAmount?: number | null;
+    asOf: string;
+    ccy: BookCcy;
+    counterparty?: string;
+    label?: string;
+  },
+): BookPosition[] {
+  const list = [...(positions ?? [])];
+  if (list.some((p) => isBookCash(p))) return list;
+  const amount = Number(opts.cashAmount ?? 0);
+  if (!(amount > 0)) return list;
+  const ccy = opts.ccy;
+  list.unshift({
+    securityId: `CASH-${ccy}-HOLDING`,
+    assetName: opts.label?.trim() || `${ccy} Cash - Custody Account`,
+    assetType: "Cash / Bank Deposit",
+    currency: ccy,
+    counterparty: opts.counterparty || "Custodian",
+    isin: "",
+    issueDate: opts.asOf,
+    maturityDate: opts.asOf,
+    parValue: amount,
+    amortizedCost: amount,
+    shadowMtm: amount,
+    couponRatePct: 0,
+    couponType: "fixed",
+    resetDate: null,
+    rating: "NR",
+    dayCount: ccy === "HKD" ? "Act/365" : "Act/360",
+  });
+  return list;
 }
 
-function settleOn(trades: DeskTrade[], date: string, predicate: (t: DeskTrade) => boolean): number {
-  return trades.filter((t) => t.settlementDate === date && predicate(t)).reduce((s, t) => s + t.amount, 0);
+export function settlementProceeds(pos: BookPosition, asOf: string): number {
+  const days = residualDays(pos, asOf);
+  const oneDay = pos.parValue * (pos.couponRatePct / 100) / dayCountBase(pos);
+  if (days <= 0) return pos.parValue + oneDay;
+  return maturityProceeds(pos, asOf);
+}
+
+export function listMaturities(positions: BookPosition[], asOf: string, days: 0 | 1) {
+  return positions
+    .filter((p) => residualDays(p, asOf) === days && !(days === 0 && isDemandCash(p, asOf)))
+    .map((p) => ({
+      securityId: p.securityId,
+      name: p.assetName,
+      counterparty: p.counterparty,
+      amount: settlementProceeds(p, asOf),
+      assetType: p.assetType,
+    }));
+}
+
+function simOn(sims: CashSimTrade[], settle: "T+0" | "T+1", side: "Buy" | "Sell"): number {
+  return sims.filter((t) => t.settle === settle && t.side === side).reduce((s, t) => s + t.amount, 0);
+}
+
+function withAdj(adj: Partial<CashAdj>): CashAdj {
+  return { ...defaultCashAdj(), ...adj };
 }
 
 export function computeCashPosition(
   positions: BookPosition[],
-  trades: DeskTrade[],
-  adj: CashAdj,
+  _tradesIgnored: unknown,
+  adjInput: CashAdj,
   asOf: string,
+  sims: CashSimTrade[] = [],
+  taFlows: TaFlow[] = [],
 ): CashPositionSnapshot {
+  const adj = withAdj(adjInput);
+  const ta = taSettleBuckets(taFlows, asOf);
   const t1Date = addDays(asOf, 1);
-  const aum = positions.reduce((s, p) => s + p.amortizedCost, 0);
-  const fees = (aum * (MGMT_FEE + CUSTODY_FEE)) / 365;
+  const aum = Math.max(bookAum(positions), 1);
+  const autoFee = (aum * (MGMT_FEE + CUSTODY_FEE)) / 365;
 
-  const demand = positions.filter((p) => isDemandCash(p, asOf));
-  const openingCash = demand.reduce((s, p) => s + p.amortizedCost, 0);
+  const openingCash = positions.filter((p) => isDemandCash(p, asOf)).reduce((s, p) => s + p.amortizedCost, 0);
+  const maturitiesT0 = listMaturities(positions, asOf, 0);
+  const maturitiesT1 = listMaturities(positions, asOf, 1);
+  const t0Maturing = maturitiesT0.reduce((s, r) => s + r.amount, 0);
+  const t1Maturing = maturitiesT1.reduce((s, r) => s + r.amount, 0);
 
-  const maturingT0 = positions.filter((p) => residualDays(p, asOf) === 0 && !isDemandCash(p, asOf));
-  const maturingT1 = positions.filter((p) => residualDays(p, asOf) === 1);
+  const t0BuySettle = simOn(sims, "T+0", "Buy");
+  const t0SellSettle = simOn(sims, "T+0", "Sell");
+  const t1BuySettle = simOn(sims, "T+1", "Buy");
+  const t1SellSettle = simOn(sims, "T+1", "Sell");
 
-  const t0Maturing = maturingT0.reduce((s, p) => s + maturityProceeds(p), 0);
-  const t1Maturing = maturingT1.reduce((s, p) => s + maturityProceeds(p), 0);
+  const t0NetSub = adj.t0Subscription + ta.t0Sub - adj.t0Redemption - ta.t0Red;
+  const t1NetSub = adj.t1Subscription + ta.t1Sub - adj.t1Redemption - ta.t1Red;
 
-  const t0NetSub = adj.t0Subscription - adj.t0Redemption;
-  const t1NetSub = adj.t1Subscription - adj.t1Redemption;
+  const t0Available =
+    openingCash + t0Maturing + t0NetSub + t0SellSettle - t0BuySettle - adj.t0Expenses - autoFee;
+  const t1Available =
+    t0Available + t1Maturing + t1NetSub + t1SellSettle - t1BuySettle - adj.t1Expenses;
 
-  const t0BuySettle = settleOn(trades, asOf, (t) => t.status === "Pending" && isCashOutflowSide(t.side));
-  const t1ScheduledOut = settleOn(trades, t1Date, (t) => t.status === "Pending" && isCashOutflowSide(t.side));
-  const t0SellSettle = settleOn(trades, asOf, (t) => t.status === "Pending" && isCashInflowSide(t.side) && t.side === "Sell");
+  const { dlaAmt, wlaAmt } = computeDlaWla(positions, asOf);
+  const cashDeltaT0 = t0NetSub + t0SellSettle - t0BuySettle - adj.t0Expenses - autoFee;
+  const cashDeltaT1 = cashDeltaT0 + t1NetSub + t1SellSettle - t1BuySettle - adj.t1Expenses;
+  const dlaPct = ((dlaAmt + cashDeltaT0) / aum) * 100;
+  const wlaPct = ((wlaAmt + cashDeltaT1) / aum) * 100;
 
-  const t0Available = openingCash + t0Maturing + t0NetSub + t0SellSettle - t0BuySettle - fees;
-  const t1Available = t0Available + t1Maturing + t1NetSub - t1ScheduledOut;
-  const excessOk = t0Available >= 0 && t1Available >= 0;
-
-  const inflows: CashLine[] = [
-    { id: "open", label: "期初托管账户现金", detail: "Custodian demand", amount: openingCash },
-    ...maturingT0.map((p) => ({
-      id: `mat-${p.securityId}`,
-      label: p.assetType === "Reverse Repo" ? "逆回购到期" : p.assetType === "NCD" ? "存单到期兑付" : "今日到期资产本息",
-      detail: `${p.assetName} · ${p.counterparty}`,
-      amount: maturityProceeds(p),
+  const ledger: CashLedgerRow[] = [
+    {
+      id: "open",
+      type: "期初托管现金",
+      counterparty: "Custodian",
+      amount: openingCash,
+      direction: "in",
+      settle: "opening",
+      status: "Locked",
+      simulated: false,
+    },
+    ...maturitiesT0.map((m) => ({
+      id: `mat0-${m.securityId}`,
+      type: "T+0 持仓到期本息",
+      counterparty: m.counterparty,
+      amount: m.amount,
+      direction: "in" as const,
+      settle: "T+0" as const,
+      status: "Locked" as const,
+      simulated: false,
     })),
-    { id: "sub", label: "今日申购划款", detail: "T+0 subscriptions", amount: adj.t0Subscription },
-    ...(t0SellSettle
-      ? [{ id: "sell", label: "今日卖出交收入账", detail: "Settling sells", amount: t0SellSettle }]
-      : []),
-  ].filter((r) => r.amount !== 0);
-
-  const outflows: CashLine[] = [
-    { id: "red", label: "今日赎回出款", detail: "T+0 redemptions", amount: adj.t0Redemption },
-    ...trades
-      .filter((t) => t.settlementDate === asOf && t.status === "Pending" && isCashOutflowSide(t.side))
-      .map((t) => ({
-        id: t.id,
-        label: t.side === "Deposit" ? "新开立定存交收" : t.side === "Repo" ? "逆回购放款" : "新买入资产交收",
-        detail: `${t.assetName} · ${t.counterparty}`,
-        amount: t.amount,
-      })),
-    { id: "fees", label: "管理费 / 托管费计提", detail: "15 bps + 2 bps p.a. / 365", amount: fees },
-  ].filter((r) => r.amount !== 0);
+    ...maturitiesT1.map((m) => ({
+      id: `mat1-${m.securityId}`,
+      type: "T+1 持仓到期本息",
+      counterparty: m.counterparty,
+      amount: m.amount,
+      direction: "in" as const,
+      settle: "T+1" as const,
+      status: "Locked" as const,
+      simulated: false,
+    })),
+    {
+      id: "sub0",
+      type: "T+0 申购划款",
+      counterparty: "Transfer Agent",
+      amount: adj.t0Subscription,
+      direction: "in",
+      settle: "T+0",
+      status: "Applied",
+      simulated: adj.t0Subscription !== 0,
+    },
+    {
+      id: "red0",
+      type: "T+0 赎回出款",
+      counterparty: "Transfer Agent",
+      amount: adj.t0Redemption,
+      direction: "out",
+      settle: "T+0",
+      status: "Applied",
+      simulated: adj.t0Redemption !== 0,
+    },
+    {
+      id: "exp0",
+      type: "T+0 清算/杂费",
+      counterparty: "Fund expenses",
+      amount: adj.t0Expenses,
+      direction: "out",
+      settle: "T+0",
+      status: "Applied",
+      simulated: adj.t0Expenses !== 0,
+    },
+    {
+      id: "fee",
+      type: "管理费/托管费计提",
+      counterparty: "Accrual",
+      amount: autoFee,
+      direction: "out",
+      settle: "T+0",
+      status: "Locked",
+      simulated: false,
+    },
+    {
+      id: "sub1",
+      type: "T+1 预估申购",
+      counterparty: "Transfer Agent",
+      amount: adj.t1Subscription,
+      direction: "in",
+      settle: "T+1",
+      status: "Applied",
+      simulated: adj.t1Subscription !== 0,
+    },
+    {
+      id: "red1",
+      type: "T+1 预估赎回",
+      counterparty: "Transfer Agent",
+      amount: adj.t1Redemption,
+      direction: "out",
+      settle: "T+1",
+      status: "Applied",
+      simulated: adj.t1Redemption !== 0,
+    },
+    {
+      id: "exp1",
+      type: "T+1 清算/杂费",
+      counterparty: "Fund expenses",
+      amount: adj.t1Expenses,
+      direction: "out",
+      settle: "T+1",
+      status: "Applied",
+      simulated: adj.t1Expenses !== 0,
+    },
+    ...ta.confirmed.map((f) => ({
+      id: f.id,
+      type: f.type === "SUB" ? "TA 申购确认" : "TA 赎回确认",
+      counterparty: f.investorCode,
+      amount: f.amount,
+      direction: (f.type === "SUB" ? "in" : "out") as "in" | "out",
+      settle: (f.settlementDate === asOf ? "T+0" : f.settlementDate === t1Date ? "T+1" : "T+1") as "T+0" | "T+1",
+      status: "Applied" as const,
+      simulated: false,
+    })),
+    ...sims.map((t) => ({
+      id: t.id,
+      type: t.side === "Buy" ? `拟买入 ${t.assetKind}` : `拟卖出 ${t.assetKind}`,
+      counterparty: t.name || t.assetKind,
+      amount: t.amount,
+      direction: (t.side === "Buy" ? "out" : "in") as "in" | "out",
+      settle: t.settle,
+      status: "Applied" as const,
+      simulated: true,
+    })),
+  ].filter((r) => r.amount !== 0) as CashLedgerRow[];
 
   return {
     asOf,
     t1Date,
     openingCash,
     t0Maturing,
-    t0NetSub,
-    t0BuySettle,
-    t0Available,
     t1Maturing,
+    t0NetSub,
     t1NetSub,
-    t1ScheduledOut,
+    t0BuySettle,
+    t0SellSettle,
+    t1BuySettle,
+    t1SellSettle,
+    t0Expenses: adj.t0Expenses,
+    t1Expenses: adj.t1Expenses,
+    autoFee,
+    t0Available,
     t1Available,
     netSubT0: t0NetSub,
-    fees,
-    excessOk,
-    inflows,
-    outflows,
+    excessOk: t0Available >= 0 && t1Available >= 0,
+    dlaPct: Number(dlaPct.toFixed(2)),
+    wlaPct: Number(wlaPct.toFixed(2)),
+    dlaOk: dlaPct >= DLA_FLOOR,
+    wlaOk: wlaPct >= WLA_FLOOR,
+    ledger,
+    maturitiesT0,
+    maturitiesT1,
   };
 }
+
+export function emptyCashAdj(): CashAdj {
+  return defaultCashAdj();
+}
+
+export { DLA_FLOOR, WLA_FLOOR, WLA_INTERNAL_FLOOR, WLA_SFC_FLOOR };

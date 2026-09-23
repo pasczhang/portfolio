@@ -1,12 +1,12 @@
 "use client";
 
 import { Suspense } from "react";
-import { Workbench } from "@/components/dashboard/Workbench";
+import { Dashboard } from "@/components/dashboard/Dashboard";
 
 export default function HomePage() {
   return (
     <Suspense fallback={<p className="p-4 text-xs text-slate-400">Loading workbench…</p>}>
-      <Workbench />
+      <Dashboard />
     </Suspense>
   );
 }

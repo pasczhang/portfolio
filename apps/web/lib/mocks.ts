@@ -19,6 +19,7 @@ export const MOCK_HOLDINGS: { as_of: string; fund_code: string; aum_securities: 
   row_count: 6,
   holdings: [
     {
+      row_key: "TD-HSBC-ON#0",
       security_id: "TD-HSBC-ON",
       instrument: "HSBC Overnight Time Deposit",
       product_type: "TD",
@@ -35,6 +36,7 @@ export const MOCK_HOLDINGS: { as_of: string; fund_code: string; aum_securities: 
       weight_pct: 15.02,
     },
     {
+      row_key: "TD-SCB-7D#1",
       security_id: "TD-SCB-7D",
       instrument: "Standard Chartered 7D Time Deposit",
       product_type: "TD",
@@ -51,6 +53,7 @@ export const MOCK_HOLDINGS: { as_of: string; fund_code: string; aum_securities: 
       weight_pct: 10.01,
     },
     {
+      row_key: "TB-HKMA-2W#2",
       security_id: "TB-HKMA-2W",
       instrument: "HKMA Exchange Fund Bill 14D",
       product_type: "T-Bill",
@@ -67,6 +70,7 @@ export const MOCK_HOLDINGS: { as_of: string; fund_code: string; aum_securities: 
       weight_pct: 8.74,
     },
     {
+      row_key: "TB-UST-4W#3",
       security_id: "TB-UST-4W",
       instrument: "US Treasury Bill 4W",
       product_type: "T-Bill",
@@ -83,6 +87,7 @@ export const MOCK_HOLDINGS: { as_of: string; fund_code: string; aum_securities: 
       weight_pct: 34.96,
     },
     {
+      row_key: "NCD-ICBC-45#4",
       security_id: "NCD-ICBC-45",
       instrument: "ICBC Negotiable CD",
       product_type: "NCD",
@@ -99,6 +104,7 @@ export const MOCK_HOLDINGS: { as_of: string; fund_code: string; aum_securities: 
       weight_pct: 12.48,
     },
     {
+      row_key: "NCD-BOC-60#5",
       security_id: "NCD-BOC-60",
       instrument: "Bank of China NCD FRN",
       product_type: "NCD",
@@ -267,7 +273,7 @@ export const MOCK_NAV: NavMonitor = {
   official_nav: 1,
   shadow_nav: 1.0004,
   deviation_bps: 4.0,
-  yellow_bps: 20,
+    yellow_bps: 25,
   red_bps: 50,
   series,
   collar_bars: series.slice(-14),

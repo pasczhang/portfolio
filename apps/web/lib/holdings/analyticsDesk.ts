@@ -1,6 +1,11 @@
 import { addDays } from "@/lib/holdings/dates";
-import { residualDays } from "@/lib/holdings/metrics";
-import type { BookCcy, BookMetrics, BookPosition } from "@/lib/holdings/types";
+import {
+  computeMaturityLadder,
+  groupByIssuer,
+  groupByRating,
+  type LadderSlice,
+} from "@/lib/holdings/calculator";
+import type { BookCcy, BookMetrics } from "@/lib/holdings/types";
 
 export const RANGE_OPTIONS = [
   { id: "7d", label: "近7天", days: 7 },
@@ -11,7 +16,7 @@ export const RANGE_OPTIONS = [
 
 export type AnalyticsRange = (typeof RANGE_OPTIONS)[number]["id"];
 
-export const LADDER_BUCKETS = ["T+0 (今)", "T+1", "2-7天", "8-30天", "31-60天", "61-90天", "90天以上"] as const;
+export const LADDER_BUCKETS = ["T+0 (0d)", "T+1 (1d)", "2–7d", "8–30d", "31–60d", "61–90d", ">90d"] as const;
 
 export const DLA_FLOOR = 10;
 export const WLA_FLOOR = 15;
@@ -33,37 +38,9 @@ export function benchmarkName(ccy: BookCcy): "SOFR" | "HIBOR" {
   return ccy === "HKD" ? "HIBOR" : "SOFR";
 }
 
+/** Fallback levels used only to sketch a simulated path — not a live feed. */
 export function benchmarkLevel(ccy: BookCcy): number {
   return ccy === "HKD" ? 3.42 : 5.31;
-}
-
-function ladderLabel(days: number): (typeof LADDER_BUCKETS)[number] {
-  if (days <= 0) return "T+0 (今)";
-  if (days === 1) return "T+1";
-  if (days <= 7) return "2-7天";
-  if (days <= 30) return "8-30天";
-  if (days <= 60) return "31-60天";
-  if (days <= 90) return "61-90天";
-  return "90天以上";
-}
-
-function stackOf(p: BookPosition): "td" | "cd" | "govt" {
-  if (p.assetType === "Govt Bills") return "govt";
-  if (p.assetType === "NCD" || p.assetType === "Commercial Paper") return "cd";
-  return "td";
-}
-
-export function regionOf(p: BookPosition): string {
-  const n = `${p.counterparty} ${p.assetName} ${p.isin}`.toLowerCase();
-  if (/us treasury|federal reserve|citigroup|j\.?p\.? morgan|jpm|united states/.test(n)) return "US";
-  if (/icbc|bo ci|boci|bank of china \(hong kong\)|boc hk/.test(n)) return /hong kong|hk/.test(n) ? "HK" : "CN";
-  if (/bank of china/.test(n) && /hong kong/.test(n)) return "HK";
-  if (/bank of china|icbc|cnb/.test(n)) return "CN";
-  if (/dbs|ocbc|uob|singapore/.test(n)) return "SG";
-  if (/hsbc/.test(n) && /hk/.test(n)) return "HK";
-  if (/hsbc/.test(n)) return "UK";
-  if (/hkma|hang seng|standard chartered|east asia|hong kong/.test(n)) return "HK";
-  return p.currency === "HKD" ? "HK" : "US";
 }
 
 export type YieldPoint = { date: string; iso: string; fund7d: number; bench: number; shadow: number };
@@ -103,6 +80,10 @@ export function buildYieldSeries(
       shadow: Number((shadow - 0.1 * (1 - t) + n * 1.15).toFixed(3)),
     });
   }
+  if (rows.length) {
+    const last = rows[rows.length - 1];
+    rows[rows.length - 1] = { ...last, fund7d, bench, shadow };
+  }
   return rows;
 }
 
@@ -126,52 +107,28 @@ export function buildLiquiditySeries(
       wla: Number(Math.max(12, wla - 3.2 * (1 - t) + n * 1.2).toFixed(2)),
     });
   }
+  if (rows.length) {
+    const last = rows[rows.length - 1];
+    rows[rows.length - 1] = { ...last, dla, wla };
+  }
   return rows;
 }
 
-export function buildMaturityLadder(positions: BookPosition[], asOf: string): LadderRow[] {
-  const empty = Object.fromEntries(LADDER_BUCKETS.map((b) => [b, { td: 0, cd: 0, govt: 0 }])) as Record<
-    string,
-    { td: number; cd: number; govt: number }
-  >;
-  for (const p of positions) {
-    const bucket = ladderLabel(residualDays(p, asOf));
-    empty[bucket][stackOf(p)] += p.amortizedCost;
-  }
-  return LADDER_BUCKETS.map((bucket) => {
-    const row = empty[bucket];
-    return { bucket, ...row, total: row.td + row.cd + row.govt };
-  });
+export function buildMaturityLadder(positions: Parameters<typeof computeMaturityLadder>[0], asOf: string): LadderSlice[] {
+  return computeMaturityLadder(positions, asOf);
 }
 
-export function buildCreditMix(positions: BookPosition[]): CreditRow[] {
-  const aum = positions.reduce((s, p) => s + p.amortizedCost, 0) || 1;
-  const map = new Map<string, number>();
-  for (const p of positions) {
-    const rating = p.rating || "NR";
-    map.set(rating, (map.get(rating) ?? 0) + p.amortizedCost);
-  }
-  const order = ["SOVEREIGN", "AA+", "AAA", "A-1+", "A-1", "A-2", "NR"];
-  return Array.from(map.entries())
-    .sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]) || b[1] - a[1])
-    .map(([rating, value]) => ({ rating, value, pct: (value / aum) * 100 }));
+export function buildCreditMix(positions: Parameters<typeof groupByRating>[0]): CreditRow[] {
+  return groupByRating(positions).map((g) => ({ rating: g.key, value: g.amount, pct: g.pct }));
 }
 
-export function buildGeoMix(positions: BookPosition[]): GeoRow[] {
-  const aum = positions.reduce((s, p) => s + p.amortizedCost, 0) || 1;
-  const map = new Map<string, number>();
-  for (const p of positions) {
-    const r = regionOf(p);
-    map.set(r, (map.get(r) ?? 0) + p.amortizedCost);
-  }
-  return Array.from(map.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, value]) => ({ name, value, pct: (value / aum) * 100 }));
+export function buildIssuerMix(positions: Parameters<typeof groupByIssuer>[0]): GeoRow[] {
+  return groupByIssuer(positions).map((g) => ({ name: g.key, value: g.amount, pct: g.pct }));
 }
 
 function tone(dev: number, dla: number, wla: number): "ok" | "watch" | "breach" {
   if (Math.abs(dev) >= 50 || dla < DLA_FLOOR || wla < WLA_FLOOR) return "breach";
-  if (Math.abs(dev) >= 20 || dla < DLA_FLOOR + 2 || wla < WLA_FLOOR + 3) return "watch";
+  if (Math.abs(dev) >= 25 || dla < DLA_FLOOR + 2 || wla < 20) return "watch";
   return "ok";
 }
 
@@ -199,10 +156,4 @@ export function buildStressMatrix(m: BookMetrics): StressRow[] {
   return rows.map((r) => ({ ...r, status: tone(r.deviationBps, r.dlaPct, r.wlaPct) }));
 }
 
-export function modifiedDuration(wamDays: number): number {
-  return wamDays / 365;
-}
-
-export function dv01(aum: number, wamDays: number): number {
-  return aum * modifiedDuration(wamDays) * 0.0001;
-}
+export { modifiedDuration, dv01 } from "@/lib/holdings/calculator";

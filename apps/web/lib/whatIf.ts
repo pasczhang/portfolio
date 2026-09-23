@@ -121,7 +121,8 @@ export function localWhatIf(data: WorkbenchSnapshot, form: WhatIfForm): PreTrade
   if (!sovereign && issuerA > 20) push("ISSUER_20PCT", "BLOCK", `SFC 8.2: issuer exposure ${issuerA.toFixed(2)}% exceeds 20% privileged cap`);
   else if (!sovereign && issuerA > 10) push("ISSUER_10PCT", "BLOCK", `SFC 8.2: issuer exposure ${issuerA.toFixed(2)}% exceeds 10% single-issuer limit (privileged cap 20%)`);
   if (dlaA < 10) push("DLA_10PCT", "BLOCK", `SFC 8.2: DLA ${dlaA.toFixed(2)}% below 10% daily liquidity floor`);
-  if (wlaA < 20) push("WLA_20PCT", "BLOCK", `SFC 8.2: WLA ${wlaA.toFixed(2)}% below 20% weekly liquidity floor`);
+  if (wlaA < 15) push("WLA_15PCT", "BLOCK", `SFC 8.2: WLA ${wlaA.toFixed(2)}% below 15% weekly liquidity floor`);
+  else if (wlaA < 20) push("WLA_20PCT", "WATCH", `Internal WLA ${wlaA.toFixed(2)}% below 20% control line`);
   if (cashAfter < 0) push("CASH_SHORTFALL", "BLOCK", `Cash shortfall vs notional`);
   const intercept = flags.some((f) => f.severity === "BLOCK");
   const watch = flags.some((f) => f.severity === "WATCH");
@@ -158,7 +159,7 @@ export function localWhatIf(data: WorkbenchSnapshot, form: WhatIfForm): PreTrade
         note: "10% standard / 20% privileged",
       }),
       metric("dla", "DLA", "pct", dlaB, dlaA, { floor: 10, breached: dlaA < 10 }),
-      metric("wla", "WLA", "pct", wlaB, wlaA, { floor: 20, breached: wlaA < 20 }),
+      metric("wla", "WLA", "pct", wlaB, wlaA, { floor: 15, breached: wlaA < 15, watch: wlaA >= 15 && wlaA < 20 }),
       metric("yield", "Portfolio Yield", "pct", yieldB, yieldA),
     ],
     concentration: [

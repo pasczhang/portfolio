@@ -224,8 +224,8 @@ export function DualNavDesk() {
               <Legend />
               <Line yAxisId="nav" type="monotone" dataKey="official" name="Accounting NAV" stroke="#94a3b8" dot={false} />
               <Line yAxisId="nav" type="monotone" dataKey="shadow" name="Shadow NAV" stroke="#f59e0b" dot={false} />
-              <ReferenceLine yAxisId="bps" y={20} stroke="#fbbf24" strokeDasharray="4 4" />
-              <ReferenceLine yAxisId="bps" y={-20} stroke="#fbbf24" strokeDasharray="4 4" />
+              <ReferenceLine yAxisId="bps" y={25} stroke="#fbbf24" strokeDasharray="4 4" />
+              <ReferenceLine yAxisId="bps" y={-25} stroke="#fbbf24" strokeDasharray="4 4" />
               <ReferenceLine yAxisId="bps" y={50} stroke="#f87171" strokeDasharray="4 4" />
               <ReferenceLine yAxisId="bps" y={-50} stroke="#f87171" strokeDasharray="4 4" />
               <Line yAxisId="bps" type="monotone" dataKey="deviation" name="Deviation bps" stroke="#38bdf8" dot={false} />
@@ -266,8 +266,8 @@ export function DualNavDesk() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((p) => (
-              <Fragment key={p.security_id}>
+            {rows.map((p, i) => (
+              <Fragment key={`${p.security_id}#${i}`}>
                 <tr className="border-t border-[hsl(var(--border))]">
                   <td className="px-3 py-2">
                     <div className="font-mono text-amber-400">{p.isin}</div>

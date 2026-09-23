@@ -53,9 +53,14 @@ export type BookMetrics = {
   officialNav: number;
   shadowNav: number;
   deviationBps: number;
+  deviationPct: number;
   deviationStatus: string;
   wamDays: number;
   walDays: number;
+  cashRatio: number;
+  bondRatio: number;
+  depositRatio: number;
+  repoRatio: number;
   dlaPct: number;
   wlaPct: number;
   portfolioYieldPct: number;

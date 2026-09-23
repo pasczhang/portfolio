@@ -5,13 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useDesk } from "@/components/layout/DeskProvider";
 import { useBook } from "@/components/layout/BookProvider";
-import { buildImportPreview, downloadHoldingsTemplate, parseHoldingRecords, workbookToRows } from "@/lib/holdings";
+import { usePermissions } from "@/lib/auth/usePermissions";
+import { buildImportPreview, downloadHoldingsTemplate, parseHoldingRecords, workbookToRows, jsonToRecords } from "@/lib/holdings";
 import type { ImportPreview } from "@/lib/holdings/types";
 import { X } from "lucide-react";
 
-export function HoldingsActions() {
+export function HoldingsActions({ onManualAdd }: { onManualAdd?: () => void }) {
   const { fund } = useDesk();
   const { origin, resetDemo } = useBook();
+  const { canWrite } = usePermissions();
   const [open, setOpen] = useState(false);
 
   return (
@@ -19,10 +21,17 @@ export function HoldingsActions() {
       <Button variant="outline" onClick={() => downloadHoldingsTemplate(fund.ccy, fund.code)}>
         下载模板
       </Button>
-      <Button variant="accent" onClick={() => setOpen(true)}>
-        导入持仓
-      </Button>
-      {origin === "import" ? (
+      {canWrite && onManualAdd ? (
+        <Button variant="accent" onClick={onManualAdd}>
+          + 手工添加持仓
+        </Button>
+      ) : null}
+      {canWrite ? (
+        <Button variant="accent" onClick={() => setOpen(true)}>
+          导入持仓
+        </Button>
+      ) : null}
+      {canWrite && origin === "import" ? (
         <Button variant="ghost" onClick={resetDemo}>
           恢复样本账本
         </Button>
@@ -47,14 +56,16 @@ function ImportHoldingsModal({ onClose }: { onClose: () => void }) {
       setError(null);
       setFileName(file.name);
       const lower = file.name.toLowerCase();
-      if (!lower.endsWith(".xlsx") && !lower.endsWith(".xls") && !lower.endsWith(".csv")) {
-        setError("仅支持 .xlsx / .csv");
+      if (!lower.endsWith(".xlsx") && !lower.endsWith(".xls") && !lower.endsWith(".csv") && !lower.endsWith(".json")) {
+        setError("仅支持 .xlsx / .csv / .json");
         return;
       }
       setBusy(true);
       try {
         const buf = await file.arrayBuffer();
-        const records = workbookToRows(buf);
+        const records = lower.endsWith(".json")
+          ? jsonToRecords(new TextDecoder("utf-8").decode(buf))
+          : workbookToRows(buf);
         if (!records.length) {
           setError("文件没有可解析的数据行");
           setPreview(null);
@@ -85,7 +96,7 @@ function ImportHoldingsModal({ onClose }: { onClose: () => void }) {
           <div>
             <h2 className="text-sm font-semibold">导入持仓 · {fund.code}</h2>
             <p className="text-[11px] text-[hsl(var(--muted-foreground))]">
-              解析绑定当前份额 {fund.ccy} · Excel / CSV · 即传即用
+              解析绑定当前份额 {fund.ccy} · Excel / CSV / JSON · 覆盖后全盘重算 WAM / DLA / 分布 / 阶梯
             </p>
           </div>
           <button type="button" onClick={onClose} aria-label="关闭">
@@ -109,14 +120,14 @@ function ImportHoldingsModal({ onClose }: { onClose: () => void }) {
             if (file) void ingest(file);
           }}
         >
-          <p>拖拽 .xlsx / .csv 到此处，或</p>
+          <p>拖拽 .xlsx / .csv / .json 到此处，或</p>
           <Button variant="outline" className="mt-2" onClick={() => inputRef.current?.click()}>
             选择文件
           </Button>
           <input
             ref={inputRef}
             type="file"
-            accept=".xlsx,.xls,.csv"
+            accept=".xlsx,.xls,.csv,.json,application/json"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useRef, useState, type ComponentType } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Bell,
   Building2,
@@ -13,13 +13,21 @@ import {
   PieChart,
   Scale,
   ScrollText,
+  Settings,
   ShieldCheck,
   Sun,
-  UserRound,
   Wallet,
+  Workflow,
+  KeyRound,
+  LogOut,
 } from "lucide-react";
 import { FUNDS, useDesk } from "@/components/layout/DeskProvider";
 import { useBook } from "@/components/layout/BookProvider";
+import { useAuth } from "@/lib/auth/AuthProvider";
+import { ROLE_LABEL } from "@/lib/auth/users";
+import { ChangePasswordModal } from "@/components/auth/ChangePasswordModal";
+import { CenteredModal } from "@/components/ui/CenteredModal";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { num } from "@/lib/format";
 
@@ -32,11 +40,12 @@ const TABS: {
   match?: string[];
 }[] = [
   { href: "/cash", zh: "头寸计算", en: "Cash Position", badge: "T+0/T+1", Icon: Wallet },
-  { href: "/analysis", zh: "持仓明细", en: "Holdings", badge: "% of NAV", Icon: PieChart, match: ["/portfolio"] },
+  { href: "/analysis", zh: "持仓明细", en: "Holdings", badge: "% of NAV", Icon: PieChart, match: ["/portfolio", "/holdings"] },
   { href: "/analytics", zh: "分析看板", en: "Analytics", badge: "Stress", Icon: LineChart },
   { href: "/trading", zh: "交易记录", en: "Trade Records", badge: "Blotter", Icon: ScrollText },
   { href: "/workbench", zh: "事前试算", en: "Pre-Trade", badge: "What-if", Icon: Calculator },
   { href: "/nav", zh: "双轨估值", en: "Dual Valuation", badge: "NAV", Icon: Scale },
+  { href: "/ops", zh: "运营台", en: "Ops Desk", badge: "EOD", Icon: Workflow },
   {
     href: "/compliance",
     zh: "SFC合规台",
@@ -46,6 +55,7 @@ const TABS: {
     match: ["/reports"],
   },
   { href: "/funds", zh: "多基金总览", en: "Funds", badge: "USD/HKD", Icon: Building2 },
+  { href: "/settings", zh: "系统设置", en: "Settings", badge: "Fund", Icon: Settings },
 ];
 
 type AlertItem = { id: string; title: string; severity: string };
@@ -58,17 +68,25 @@ function spreadClass(bps: number) {
 }
 
 function wlaClass(pct: number) {
-  return pct >= 20 ? "border-emerald-500/40 text-emerald-400" : "border-red-500/50 text-red-400";
+  if (pct >= 20) return "border-emerald-500/40 text-emerald-400";
+  if (pct >= 15) return "border-amber-500/50 text-amber-400";
+  return "border-red-500/50 text-red-400";
 }
 
 function wamClass(days: number) {
   return days <= 60 ? "border-emerald-500/40 text-emerald-400" : "border-red-500/50 text-red-400";
 }
 
+function walClass(days: number) {
+  return days <= 120 ? "border-emerald-500/40 text-emerald-400" : "border-red-500/50 text-red-400";
+}
+
 export function GlobalHeader() {
   const pathname = usePathname();
   const { fund, fundId, setFundId, asOf, role, setRole, dark, toggleTheme } = useDesk();
   const { metrics, compliance, origin } = useBook();
+  const { user, logout } = useAuth();
+  const router = useRouter();
   const spread = num(metrics.deviationBps);
   const wla = num(metrics.wlaPct);
   const wam = num(metrics.wamDays);
@@ -76,6 +94,8 @@ export function GlobalHeader() {
   const alerts = compliance.alerts.map((a) => ({ id: a.id, title: a.title, severity: a.severity }));
   const [openAlerts, setOpenAlerts] = useState(false);
   const [openUser, setOpenUser] = useState(false);
+  const [changePw, setChangePw] = useState(false);
+  const [confirmOut, setConfirmOut] = useState(false);
   const wrap = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -167,11 +187,17 @@ export function GlobalHeader() {
 
         <div className="hidden items-center gap-1 font-mono text-[10px] lg:flex">
           <span className={cn("rounded border px-1.5 py-0.5", spreadClass(spread))}>
-            Spread {spread >= 0 ? "+" : ""}
+            {metrics.deviationStatus} {spread >= 0 ? "+" : ""}
             {spread.toFixed(1)} bps
+          </span>
+          <span className={cn("rounded border px-1.5 py-0.5", wlaClass(num(metrics.dlaPct)))}>
+            DLA {num(metrics.dlaPct).toFixed(1)}%
           </span>
           <span className={cn("rounded border px-1.5 py-0.5", wlaClass(wla))}>WLA {wla.toFixed(1)}%</span>
           <span className={cn("rounded border px-1.5 py-0.5", wamClass(wam))}>WAM {wam.toFixed(1)}d</span>
+          <span className={cn("rounded border px-1.5 py-0.5", walClass(num(metrics.walDays)))}>
+            WAL {num(metrics.walDays).toFixed(1)}d
+          </span>
         </div>
 
         <div className="relative">
@@ -217,25 +243,81 @@ export function GlobalHeader() {
         <div className="relative">
           <button
             type="button"
-            className="rounded-md border border-[hsl(var(--border))] p-1.5"
+            className="flex items-center gap-1.5 rounded-md border border-[hsl(var(--border))] px-2 py-1"
             onClick={() => {
               setOpenUser((v) => !v);
               setOpenAlerts(false);
             }}
           >
-            <UserRound className="h-3.5 w-3.5" />
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500/20 text-[10px] font-semibold text-amber-300">
+              {(user?.displayName || user?.username || "U").slice(0, 1).toUpperCase()}
+            </span>
+            <span className="hidden max-w-[120px] truncate text-[11px] sm:inline">{user?.displayName || "Desk User"}</span>
           </button>
           {openUser ? (
-            <div className="absolute right-0 top-10 z-50 w-52 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-[11px] shadow-lg">
-              <p className="font-medium">Desk User</p>
-              <p className="text-[hsl(var(--muted-foreground))]">{fund.name}</p>
-              <p className="mt-1 font-mono">
+            <div className="absolute right-0 top-10 z-50 w-56 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-[11px] shadow-lg">
+              <p className="font-medium">{user?.displayName}</p>
+              <p className="font-mono text-[hsl(var(--muted-foreground))]">
+                {user?.username} · {user ? ROLE_LABEL[user.role] : ""}
+              </p>
+              <p className="mt-1 font-mono text-[10px] text-[hsl(var(--muted-foreground))]">
                 {fund.code} · {fund.ccy}
               </p>
+              <Link
+                href="/settings"
+                className="mt-2 block rounded px-1 py-1 text-amber-400 hover:bg-[hsl(var(--muted))]"
+                onClick={() => setOpenUser(false)}
+              >
+                系统设置 / 基金管理 →
+              </Link>
+              <button
+                type="button"
+                className="mt-1 flex w-full items-center gap-1.5 rounded px-1 py-1 hover:bg-[hsl(var(--muted))]"
+                onClick={() => {
+                  setOpenUser(false);
+                  setChangePw(true);
+                }}
+              >
+                <KeyRound className="h-3.5 w-3.5" />
+                修改密码
+              </button>
+              <button
+                type="button"
+                className="mt-1 flex w-full items-center gap-1.5 rounded px-1 py-1 text-red-300 hover:bg-red-500/15"
+                onClick={() => {
+                  setOpenUser(false);
+                  setConfirmOut(true);
+                }}
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                退出登录
+              </button>
             </div>
           ) : null}
         </div>
       </div>
+      {changePw ? <ChangePasswordModal onClose={() => setChangePw(false)} /> : null}
+      {confirmOut ? (
+        <CenteredModal title="退出登录" onClose={() => setConfirmOut(false)} widthClass="max-w-sm">
+          <p className="text-[12px] text-[hsl(var(--muted-foreground))]">确认退出当前会话？未保存的表单将丢失。</p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setConfirmOut(false)}>
+              取消
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={() => {
+                logout({ reason: "manual" });
+                setConfirmOut(false);
+                router.replace("/login");
+              }}
+            >
+              确认退出
+            </Button>
+          </div>
+        </CenteredModal>
+      ) : null}
     </header>
   );
 }

@@ -15,6 +15,7 @@ type DeskState = {
   role: DeskRole;
   dark: boolean;
   setFundId: (id: string) => void;
+  setAsOf: (iso: string) => void;
   setRole: (role: DeskRole) => void;
   toggleTheme: () => void;
 };
@@ -25,6 +26,7 @@ export function DeskProvider({ children }: { children: ReactNode }) {
   const [fundId, setFundIdState] = useState(DEFAULT_FUND_ID);
   const [role, setRole] = useState<DeskRole>("maker");
   const [dark, setDark] = useState(true);
+  const [asOf, setAsOfState] = useState(PRODUCT_AS_OF);
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem("pms-theme");
@@ -36,6 +38,8 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     }
     const storedRole = window.localStorage.getItem("pms-role");
     if (storedRole === "maker" || storedRole === "checker") setRole(storedRole);
+    const storedAsOf = window.localStorage.getItem("pms-asof");
+    if (storedAsOf && /^\d{4}-\d{2}-\d{2}$/.test(storedAsOf)) setAsOfState(storedAsOf);
   }, []);
 
   useEffect(() => {
@@ -54,19 +58,25 @@ export function DeskProvider({ children }: { children: ReactNode }) {
     window.localStorage.setItem("pms-role", next);
   }
 
+  function setAsOf(iso: string) {
+    setAsOfState(iso);
+    window.localStorage.setItem("pms-asof", iso);
+  }
+
   const value = useMemo<DeskState>(() => {
     const fund = fundById(fundId);
     return {
       fundId,
       fund,
-      asOf: PRODUCT_AS_OF,
+      asOf,
       role,
       dark,
       setFundId,
+      setAsOf,
       setRole: setDeskRole,
       toggleTheme: () => setDark((v) => !v),
     };
-  }, [fundId, role, dark]);
+  }, [fundId, role, dark, asOf]);
 
   return <DeskContext.Provider value={value}>{children}</DeskContext.Provider>;
 }
