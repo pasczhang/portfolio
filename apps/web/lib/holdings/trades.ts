@@ -35,6 +35,8 @@ export type DeskTrade = {
   commission?: number;
   notes?: string;
   status: SettlementStatus;
+  assetCategory?: "BOND" | "TERM_DEPOSIT" | "REPO" | "CASH";
+  details?: Record<string, unknown>;
 };
 
 export type CashAdj = {

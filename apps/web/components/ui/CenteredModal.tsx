@@ -10,12 +10,14 @@ export function CenteredModal({
   title,
   className,
   widthClass = "max-w-md",
+  bodyClassName,
 }: {
   children: ReactNode;
   onClose: () => void;
   title: string;
   className?: string;
   widthClass?: string;
+  bodyClassName?: string;
 }) {
   const [mounted, setMounted] = useState(false);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -55,7 +57,7 @@ export function CenteredModal({
   if (!mounted || typeof document === "undefined") return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/65 p-4" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/65 p-4" onMouseDown={onClose}>
       <div
         role="dialog"
         aria-modal="true"
@@ -82,7 +84,7 @@ export function CenteredModal({
             ×
           </button>
         </div>
-        <div className="max-h-[min(72vh,560px)] overflow-auto p-4">{children}</div>
+        <div className={cn("max-h-[min(72vh,560px)] overflow-auto p-4", bodyClassName)}>{children}</div>
       </div>
     </div>,
     document.body,
