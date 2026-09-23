@@ -61,10 +61,10 @@ export default function TradingPage() {
     try {
       if (editing?.id) {
         updateTrade(trade);
-        flash("交易记录已更新");
+        flash("交易已更新。组合头寸与久期已自动完成重算。");
       } else {
         addTrade(trade);
-        flash("交易记录已写入");
+        flash("交易录入成功！组合头寸与久期已自动完成重算。");
       }
       setModalOpen(false);
       setEditing(null);
@@ -77,7 +77,7 @@ export default function TradingPage() {
     if (!pendingDelete) return;
     try {
       removeTrade(pendingDelete.id);
-      flash("交易记录已成功删除");
+      flash("交易已删除。组合头寸与久期已自动回滚重算。");
       setPendingDelete(null);
     } catch {
       flash("删除失败，请重试", "error");

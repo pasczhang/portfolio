@@ -36,7 +36,10 @@ export function isWeeklyLiquid(pos: BookPosition, asOf: string): boolean {
 }
 
 export function bookAum(positions: BookPosition[]): number {
-  return positions.reduce((s, p) => s + p.amortizedCost, 0);
+  return positions.reduce((s, p) => {
+    if (p.bookRole === "liability" || p.parValue < 0) return s;
+    return s + (p.shadowMtm > 0 ? p.shadowMtm : p.amortizedCost);
+  }, 0);
 }
 
 /** WAM / WAL — market-value weighted (FRN reset vs legal maturity). */

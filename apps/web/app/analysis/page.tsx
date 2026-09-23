@@ -24,7 +24,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusPill } from "@/components/desk/meters";
 import { allocationByClass, maturityBuckets, topIssuers } from "@/lib/holdings/analysis";
-import { ensureCashHoldingRow, resolveOfficialNav, toHoldingRows } from "@/lib/holdings";
+import { ensureCashHoldingRow, toHoldingRows } from "@/lib/holdings";
 import { moneyFull, pctFmt } from "@/lib/format";
 import { usePermissions } from "@/lib/auth/usePermissions";
 import type { BookPosition } from "@/lib/holdings/types";
@@ -50,7 +50,7 @@ export default function HoldingsAnalysisPage() {
   } = useBook();
   const [manualOpen, setManualOpen] = useState(false);
   const [editing, setEditing] = useState<BookPosition | null>(null);
-  const cashAmount = cashPositions.reduce((s, p) => s + p.amortizedCost, 0) || Number(valuationReport?.cashBalance ?? 0) || metrics.cash;
+  const cashAmount = cashPositions.reduce((s, p) => s + p.amortizedCost, 0);
   const displayPositions = useMemo(() => {
     return ensureCashHoldingRow(positions || [], {
       cashAmount,
@@ -64,10 +64,7 @@ export default function HoldingsAnalysisPage() {
     () => displayPositions.reduce((s, p) => s + p.amortizedCost, 0),
     [displayPositions],
   );
-  const baseNav = useMemo(
-    () => resolveOfficialNav(valuationReport, displayPositions),
-    [valuationReport, displayPositions],
-  );
+  const baseNav = metrics.nav > 0 ? metrics.nav : metrics.aum;
   const holdings = useMemo(() => toHoldingRows(displayPositions, asOf, baseNav), [displayPositions, asOf, baseNav]);
   const pie = allocationByClass(displayPositions, asOf);
   const buckets = maturityBuckets(displayPositions, asOf);
@@ -111,8 +108,10 @@ export default function HoldingsAnalysisPage() {
           { label: "回购占比", value: pctFmt(metrics.repoRatio), hint: "REPO" },
           { label: "DLA", value: pctFmt(metrics.dlaPct), hint: "≥ 10%" },
           { label: "WLA", value: pctFmt(metrics.wlaPct), hint: "≥ 15%" },
-          { label: "偏离度", value: `${metrics.deviationPct.toFixed(3)}%`, hint: `${metrics.deviationBps.toFixed(1)} bps` },
-          { label: "Shadow NAV", value: metrics.shadowNav.toFixed(6), hint: "摊余 1.000000" },
+          { label: "修正久期", value: metrics.modifiedDuration.toFixed(4), hint: "市值加权" },
+          { label: "DV01", value: moneyFull(metrics.dv01, fund.ccy), hint: "组合 1bp" },
+          { label: "加权 YTM", value: pctFmt(metrics.weightedYtm), hint: "市值加权" },
+          { label: "杠杆率", value: pctFmt(metrics.leveragePct), hint: "总资产 / NAV" },
         ].map((k) => (
           <Card key={k.label} className="p-3">
             <p className="text-[10px] uppercase text-[hsl(var(--muted-foreground))]">{k.label}</p>

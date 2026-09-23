@@ -2,6 +2,7 @@ import { daysBetween } from "@/lib/holdings/dates";
 import type { BookPosition } from "@/lib/holdings/types";
 
 function marketValue(p: BookPosition): number {
+  if (p.bookRole === "liability" || p.parValue < 0) return 0;
   return p.shadowMtm > 0 ? p.shadowMtm : p.amortizedCost;
 }
 

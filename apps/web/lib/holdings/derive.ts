@@ -75,7 +75,7 @@ export function toHoldingRows(positions: BookPosition[], asOf: string, fundNav?:
       row_key: `${p.securityId}_${p.isin || "NA"}_${p.maturityDate}_${i}`,
       book_security_id: p.securityId,
       security_id: p.isin || p.securityId,
-      instrument: p.assetName,
+      instrument: p.lifecycle === "Matured" ? `${p.assetName} · 已到期` : p.assetName,
       product_type: CATEGORY_LABEL[cat],
       asset_type: displayAssetType(p),
       asset_category: cat,

@@ -35,6 +35,7 @@ export {
   toHoldingRows,
   resolveOfficialNav,
 } from "@/lib/holdings/derive";
+export { replayPortfolio, calculatePortfolioRisk, cashDeltaOfTrade } from "@/lib/engine/portfolioLedger";
 export { computeCashPosition, emptyCashAdj, DLA_FLOOR, WLA_FLOOR, listMaturities, isBookCash, isDemandCash, ensureCashHoldingRow } from "@/lib/holdings/cashPosition";
 export {
   assetCategoryOf,

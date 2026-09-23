@@ -8,7 +8,7 @@ import {
   residualDays,
 } from "@/lib/holdings/calculator";
 import type { BookCcy, BookPosition } from "@/lib/holdings/types";
-import type { CashAdj, CashSimTrade } from "@/lib/holdings/trades";
+import type { CashAdj, CashSimTrade, DeskTrade } from "@/lib/holdings/trades";
 import { defaultCashAdj } from "@/lib/holdings/trades";
 import type { TaFlow } from "@/lib/services/types";
 import { taSettleBuckets } from "@/lib/services/marketData/ta";
@@ -134,7 +134,7 @@ function withAdj(adj: Partial<CashAdj>): CashAdj {
 
 export function computeCashPosition(
   positions: BookPosition[],
-  _tradesIgnored: unknown,
+  trades: DeskTrade[] | unknown,
   adjInput: CashAdj,
   asOf: string,
   sims: CashSimTrade[] = [],

@@ -14,12 +14,11 @@ import {
   computeBookSnapshot,
   computeCashPosition,
   isBookCash,
-  ensureCashHoldingRow,
-  resolveOfficialNav,
   sampleTradesFor,
   defaultCashAdj,
 } from "@/lib/holdings";
 import { runPortfolioEngine } from "@/lib/engine/bookMetrics";
+import { replayPortfolio } from "@/lib/engine/portfolioLedger";
 import type { BookOrigin, BookPosition } from "@/lib/holdings/types";
 import type { CashAdj, CashSimTrade, DeskTrade } from "@/lib/holdings/trades";
 import type { DailySnapshot, ParsedValuationReport, TaFlow } from "@/lib/services/types";
@@ -63,6 +62,7 @@ type BookState = {
   positions: BookPosition[];
   origin: BookOrigin;
   trades: DeskTrade[];
+  tradesStore: TradesStored;
   cashAdj: CashAdj;
   simTrades: CashSimTrade[];
   holdingsStore: HoldingsStored;
@@ -605,6 +605,7 @@ export function BookProvider({ children }: { children: ReactNode }) {
       positions,
       origin,
       trades,
+      tradesStore,
       cashAdj,
       simTrades,
       holdingsStore,
@@ -643,6 +644,7 @@ export function BookProvider({ children }: { children: ReactNode }) {
       positions,
       origin,
       trades,
+      tradesStore,
       cashAdj,
       simTrades,
       holdingsStore,
@@ -686,26 +688,19 @@ export function useBook() {
   const ctx = useContext(BookContext);
   if (!ctx) throw new Error("useBook must be used within BookProvider");
   const { fund, asOf } = useDesk();
-  const { positions, origin, trades, cashAdj, simTrades, holdingsStore, taFlows, valuationReport, snapshots, webhookUrl, applyImport, resetDemo, resetFundToInception, addTrade, updateTrade, removeTrade, applyCashAdj, applyCashPlan, resetCashPlan, removeSimTrade, applyTaImport, setValuationReport, adoptCustodian, appendSnapshot, applyEodBook, upsertManualPosition, removeManualPosition, setWebhookUrl, persistReady, autoSnapshots, exportFullBackup, restoreFromBackup, captureAutoSnapshot, rollbackAutoSnapshot, downloadAutoSnapshot, refreshAutoSnapshots } = ctx;
-  const displayBook = useMemo(() => {
-    const cashFromBook = positions.filter(isBookCash).reduce((s, p) => s + p.amortizedCost, 0);
-    return ensureCashHoldingRow(positions, {
-      cashAmount: cashFromBook > 0 ? cashFromBook : valuationReport?.cashBalance ?? null,
-      asOf,
-      ccy: fund.ccy,
-      counterparty: valuationReport?.custodian ?? "Custodian",
-      label: valuationReport?.cashLabel || undefined,
-    });
-  }, [positions, valuationReport?.cashBalance, valuationReport?.custodian, valuationReport?.cashLabel, asOf, fund.ccy]);
+  const { positions, origin, trades, tradesStore, cashAdj, simTrades, holdingsStore, taFlows, valuationReport, snapshots, webhookUrl, applyImport, resetDemo, resetFundToInception, addTrade, updateTrade, removeTrade, applyCashAdj, applyCashPlan, resetCashPlan, removeSimTrade, applyTaImport, setValuationReport, adoptCustodian, appendSnapshot, applyEodBook, upsertManualPosition, removeManualPosition, setWebhookUrl, persistReady, autoSnapshots, exportFullBackup, restoreFromBackup, captureAutoSnapshot, rollbackAutoSnapshot, downloadAutoSnapshot, refreshAutoSnapshots } = ctx;
+  const ledger = useMemo(
+    () => replayPortfolio({ opening: positions, trades, asOf, ccy: fund.ccy }),
+    [positions, trades, asOf, fund.ccy],
+  );
+  const displayBook = ledger.positions;
   const engine = useMemo(() => runPortfolioEngine(displayBook, asOf), [displayBook, asOf]);
   const snapshot = useMemo(() => computeBookSnapshot(displayBook, asOf), [displayBook, asOf]);
   const metrics = engine.metrics;
-  const securityPositions = useMemo(() => displayBook.filter((p) => !isBookCash(p)), [displayBook]);
   const cashPositions = useMemo(() => displayBook.filter((p) => isBookCash(p)), [displayBook]);
   const holdings = useMemo(
-    () =>
-      toHoldingRows(displayBook, asOf, resolveOfficialNav(valuationReport, displayBook)),
-    [displayBook, asOf, valuationReport],
+    () => toHoldingRows(displayBook, asOf, ledger.risk.nav),
+    [displayBook, asOf, ledger.risk.nav],
   );
   const workbench = useMemo(() => deriveWorkbench(displayBook, fund, asOf), [displayBook, fund, asOf]);
   const dualNav = useMemo(() => deriveDualNav(displayBook, fund, asOf), [displayBook, fund, asOf]);
@@ -713,8 +708,8 @@ export function useBook() {
   const report = useMemo(() => deriveReport(displayBook, fund, asOf), [displayBook, fund, asOf]);
   const compliance = useMemo(() => deriveCompliance(displayBook, fund, asOf), [displayBook, fund, asOf]);
   const cashPosition = useMemo(
-    () => computeCashPosition(displayBook, trades, cashAdj, asOf, simTrades, taFlows),
-    [displayBook, trades, cashAdj, asOf, simTrades, taFlows],
+    () => computeCashPosition(displayBook, ledger.overlayTrades, cashAdj, asOf, simTrades, taFlows),
+    [displayBook, ledger.overlayTrades, cashAdj, asOf, simTrades, taFlows],
   );
   const reconciliation = useMemo(
     () => (valuationReport ? reconcileValuation(positions, valuationReport, asOf) : null),
@@ -725,14 +720,16 @@ export function useBook() {
     () =>
       FUNDS.map((f) => {
         const stored = holdingsStore[f.id];
-        const book = stored?.positions ?? sampleBookFor(f.ccy);
+        const opening = stored?.positions ?? sampleBookFor(f.ccy);
+        const bookTrades = tradesStore[f.id] ?? sampleTradesFor(f.ccy);
+        const book = replayPortfolio({ opening, trades: bookTrades, asOf, ccy: f.ccy }).positions;
         return {
           fund: f,
           origin: stored?.origin ?? ("demo" as const),
           metrics: computeMetrics(book, asOf),
         };
       }),
-    [holdingsStore, asOf],
+    [holdingsStore, tradesStore, asOf],
   );
   return {
     positions: displayBook,
@@ -784,7 +781,10 @@ export function useBook() {
     rollbackAutoSnapshot,
     downloadAutoSnapshot,
     refreshAutoSnapshots,
-    aum: metrics.aum,
+    ledger,
+    realizedPnl: ledger.realizedPnl,
+    riskMetrics: ledger.risk,
+    aum: metrics.nav || metrics.aum,
     asOf,
   };
 }

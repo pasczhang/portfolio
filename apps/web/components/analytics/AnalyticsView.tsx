@@ -64,8 +64,8 @@ export function AnalyticsView() {
   const benchPx = benchmarkLevel(fund.ccy);
   const y7 = metrics.portfolioYieldPct;
   const shadowY = y7 + metrics.deviationBps / 100;
-  const duration = modifiedDuration(metrics.wamDays);
-  const dv = dv01(metrics.aum, metrics.wamDays);
+  const duration = metrics.modifiedDuration ?? modifiedDuration(metrics.wamDays);
+  const dv = metrics.dv01 ?? dv01(metrics.aum, metrics.wamDays);
 
   const yieldRows = useMemo(
     () => buildYieldSeries(asOf, days, y7, benchPx, shadowY, `${fund.id}:${asOf}`),

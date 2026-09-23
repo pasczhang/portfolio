@@ -27,6 +27,9 @@ export type BookPosition = {
   resetDate: string | null;
   rating: string;
   dayCount: string;
+  lifecycle?: "Active" | "Matured";
+  bookRole?: "asset" | "liability";
+  avgCostPrice?: number;
 };
 
 export type ParsedHoldingRow = {
@@ -64,4 +67,11 @@ export type BookMetrics = {
   dlaPct: number;
   wlaPct: number;
   portfolioYieldPct: number;
+  modifiedDuration: number;
+  dv01: number;
+  weightedYtm: number;
+  leveragePct: number;
+  totalAssets: number;
+  nav: number;
+  repoLiabilities: number;
 };
