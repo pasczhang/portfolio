@@ -6,6 +6,7 @@ import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
+const CALENDAR_Z = 9999;
 
 function toIso(d: Date): string {
   const y = d.getFullYear();
@@ -14,22 +15,65 @@ function toIso(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function parseIso(value?: string): Date | null {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const [y, m, d] = value.split("-").map(Number);
+function validLocalDate(y: number, m: number, d: number): Date | null {
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
   const dt = new Date(y, m - 1, d);
   if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
   return dt;
 }
 
-function monthLabel(year: number, month: number) {
-  return `${year}年${month + 1}月`;
+/** Accept YYYY-MM-DD, timestamps, Date, ISO datetime; empty/null → "". Never throws. */
+export function coerceToIsoDate(value: unknown): string {
+  try {
+    if (value == null || value === "") return "";
+    if (Array.isArray(value)) return coerceToIsoDate(value[0]);
+    if (value instanceof Date) {
+      if (Number.isNaN(value.getTime())) return "";
+      return toIso(value);
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      const ms = Math.abs(value) < 1e12 ? value * 1000 : value;
+      const d = new Date(ms);
+      return Number.isNaN(d.getTime()) ? "" : toIso(d);
+    }
+    const raw = String(value).trim();
+    if (!raw || raw === "null" || raw === "undefined" || raw === "Invalid Date") return "";
+    if (/^\d{10,13}$/.test(raw)) {
+      const n = Number(raw);
+      const ms = raw.length <= 10 ? n * 1000 : n;
+      const d = new Date(ms);
+      return Number.isNaN(d.getTime()) ? "" : toIso(d);
+    }
+    const day = raw.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (day) {
+      const dt = validLocalDate(Number(day[1]), Number(day[2]), Number(day[3]));
+      if (dt) return toIso(dt);
+    }
+    const parsed = Date.parse(raw);
+    if (!Number.isNaN(parsed)) return toIso(new Date(parsed));
+    return "";
+  } catch {
+    return "";
+  }
 }
 
 function inRange(iso: string, min?: string, max?: string) {
   if (min && iso < min) return false;
   if (max && iso > max) return false;
   return true;
+}
+
+function monthLabel(year: number, month: number) {
+  return `${year}年${month + 1}月`;
+}
+
+function safeCursor(iso: string): Date {
+  const parsed = coerceToIsoDate(iso);
+  if (parsed) {
+    const [y, m, d] = parsed.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+  return new Date();
 }
 
 export function DateInput({
@@ -44,22 +88,25 @@ export function DateInput({
   autoFocus,
   onBlur,
   onFocus,
+  type: _nativeType,
   ...rest
 }: InputHTMLAttributes<HTMLInputElement>) {
-  const isoValue = typeof value === "string" ? value : "";
+  const isoValue = coerceToIsoDate(value);
+  const minStr = coerceToIsoDate(min) || undefined;
+  const maxStr = coerceToIsoDate(max) || undefined;
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(isoValue);
   const wrapRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const selected = parseIso(isoValue);
-  const [cursor, setCursor] = useState(() => selected ?? new Date());
+  const [cursor, setCursor] = useState(() => safeCursor(isoValue));
+  const [pos, setPos] = useState({ top: 8, left: 8, width: 280 });
 
   useEffect(() => {
     setText(isoValue);
   }, [isoValue]);
 
   useEffect(() => {
-    if (open) setCursor(selected ?? new Date());
+    if (open) setCursor(safeCursor(isoValue));
   }, [open, isoValue]);
 
   function emit(next: string) {
@@ -71,7 +118,7 @@ export function DateInput({
   }
 
   function pick(iso: string) {
-    if (!inRange(iso, typeof min === "string" ? min : undefined, typeof max === "string" ? max : undefined)) return;
+    if (!inRange(iso, minStr, maxStr)) return;
     setText(iso);
     emit(iso);
     setOpen(false);
@@ -93,6 +140,23 @@ export function DateInput({
     });
   }, [cursor]);
 
+  function place() {
+    const box = wrapRef.current?.getBoundingClientRect();
+    if (!box) return;
+    const width = 280;
+    const height = 320;
+    const left = Math.min(Math.max(8, box.left), window.innerWidth - width - 8);
+    const below = box.bottom + 6;
+    const top = below + height > window.innerHeight - 8 ? Math.max(8, box.top - height - 6) : below;
+    setPos({ top, left, width });
+  }
+
+  function openCalendar() {
+    if (disabled) return;
+    place();
+    setOpen(true);
+  }
+
   useEffect(() => {
     if (!open) return;
     function onDoc(e: MouseEvent) {
@@ -106,29 +170,20 @@ export function DateInput({
       e.stopImmediatePropagation();
       setOpen(false);
     }
+    function onReposition() {
+      place();
+    }
     document.addEventListener("mousedown", onDoc);
     window.addEventListener("keydown", onKey, true);
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
     return () => {
       document.removeEventListener("mousedown", onDoc);
       window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
     };
   }, [open]);
-
-  const today = toIso(new Date());
-  const minStr = typeof min === "string" ? min : undefined;
-  const maxStr = typeof max === "string" ? max : undefined;
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 280 });
-
-  function place() {
-    const box = wrapRef.current?.getBoundingClientRect();
-    if (!box) return;
-    const width = 280;
-    const height = 320;
-    const left = Math.min(Math.max(8, box.left), window.innerWidth - width - 8);
-    const below = box.bottom + 6;
-    const top = below + height > window.innerHeight - 8 ? Math.max(8, box.top - height - 6) : below;
-    setPos({ top, left, width });
-  }
 
   function toggle() {
     if (disabled) return;
@@ -142,12 +197,11 @@ export function DateInput({
   function onFieldKey(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" || e.key === "ArrowDown") {
       e.preventDefault();
-      if (!open) {
-        place();
-        setOpen(true);
-      }
+      openCalendar();
     }
   }
+
+  const today = toIso(new Date());
 
   const calendar =
     open && typeof document !== "undefined"
@@ -156,9 +210,10 @@ export function DateInput({
             ref={panelRef}
             role="dialog"
             aria-label="选择日期"
-            className="fixed z-[240] rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-[hsl(var(--card-foreground))] shadow-2xl"
-            style={{ top: pos.top, left: pos.left, width: pos.width }}
+            className="fixed rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-[hsl(var(--card-foreground))] shadow-2xl"
+            style={{ top: pos.top, left: pos.left, width: pos.width, zIndex: CALENDAR_Z }}
             onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
           >
             <div className="mb-2 flex items-center justify-between">
               <button
@@ -186,7 +241,7 @@ export function DateInput({
                 </div>
               ))}
               {cells.map((cell) => {
-                const selectedDay = cell.iso === isoValue;
+                const selectedDay = Boolean(isoValue) && cell.iso === isoValue;
                 const isToday = cell.iso === today;
                 const allowed = inRange(cell.iso, minStr, maxStr);
                 return (
@@ -249,23 +304,20 @@ export function DateInput({
         onChange={(e) => {
           const next = e.target.value.trim();
           setText(next);
-          if (!next || parseIso(next)) emit(next);
+          if (!next) {
+            emit("");
+            return;
+          }
+          const iso = coerceToIsoDate(next);
+          if (iso && (next === iso || /^\d{4}-\d{2}-\d{2}$/.test(next))) emit(iso);
         }}
         onFocus={(e) => {
           onFocus?.(e);
-          if (!disabled) {
-            place();
-            setOpen(true);
-          }
+          openCalendar();
         }}
         onBlur={onBlur}
         onKeyDown={onFieldKey}
-        onClick={() => {
-          if (!disabled) {
-            place();
-            setOpen(true);
-          }
-        }}
+        onClick={() => openCalendar()}
         className={cn(
           "h-8 w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 pr-8 font-mono text-xs text-[hsl(var(--foreground))] outline-none focus:ring-1 focus:ring-amber-500/70",
           className,

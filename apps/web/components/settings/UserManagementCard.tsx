@@ -23,6 +23,7 @@ import {
 } from "@/lib/auth/users";
 import type { UserProfile, UserRole } from "@/lib/auth/types";
 import { useFormDirty } from "@/lib/persist/dirty";
+import { LocalDataNotice } from "@/components/persist/LocalDataNotice";
 
 const ROLES: UserRole[] = ["admin", "trader", "viewer"];
 
@@ -373,6 +374,7 @@ function ResetPasswordModal({
         <p className="text-[12px] text-[hsl(var(--muted-foreground))]">
           将强制覆盖 {target.displayName} 的登录密码（SHA-256 加盐）。
         </p>
+        <LocalDataNotice />
         <Field label="新密码">
           <Input type="password" autoComplete="new-password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>

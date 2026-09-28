@@ -14,6 +14,7 @@ import { useFormDirty } from "@/lib/persist/dirty";
 import type { AutoSnapshotReason, BackupSummary, PMSBackupPayload } from "@/lib/persist/types";
 import { usePermissions } from "@/lib/auth/usePermissions";
 import { moneyFull } from "@/lib/format";
+import { LocalDataNotice } from "@/components/persist/LocalDataNotice";
 
 const REASON_LABEL: Record<AutoSnapshotReason, string> = {
   session_open: "打开系统",
@@ -167,8 +168,22 @@ export function DataBackupCard() {
       <Card className="p-4">
         <h2 className="text-sm font-semibold">数据备份与恢复 · Data Backup & Restore</h2>
         <p className="mt-1 text-[12px] text-[hsl(var(--muted-foreground))]">
-          主存储为 IndexedDB（schema {persistReady ? "已就绪" : "加载中"}）。导出 JSON 含基金信息、持仓、交易、现金、估值快照与 checksum。
+          主存储为 IndexedDB（schema {persistReady ? "已就绪" : "加载中"}）。密码哈希写入 IndexedDB 键 `users`，并缓存到 localStorage `pms-auth-users-cache`。导出 JSON 含基金信息、持仓、交易、现金、估值快照与 checksum。
         </p>
+        <LocalDataNotice className="mt-2" />
+        <details className="mt-2 rounded-md border border-[hsl(var(--border))] px-3 py-2 text-[11px] text-[hsl(var(--muted-foreground))]">
+          <summary className="cursor-pointer text-[12px] text-amber-200">跨电脑同步改造方案（可选）</summary>
+          <ol className="mt-2 list-decimal space-y-1 pl-4">
+            <li>短期：继续用本页「导出全量备份 / 覆盖恢复」在电脑间拷贝 JSON。</li>
+            <li>
+              账户层：接入 Supabase Auth（或自建 Node/Express + SQLite）托管用户表；登录改为校验服务端哈希，不再只写本机 IndexedDB。
+            </li>
+            <li>
+              业务层：将 PersistBundle（持仓、交易、现金、估值）按 fundId 同步到同一后端；打开系统时 pull，写入后 debounce push。
+            </li>
+            <li>冲突：以服务端 updatedAt 为准，本地仅作离线缓存。</li>
+          </ol>
+        </details>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button type="button" variant="accent" disabled={busy} onClick={() => void onExport()}>
             <Download className="h-3.5 w-3.5" />

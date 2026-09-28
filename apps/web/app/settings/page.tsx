@@ -4,6 +4,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { useBook } from "@/components/layout/BookProvider";
 import { useDesk } from "@/components/layout/DeskProvider";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { DangerZoneCard } from "@/components/settings/DangerZoneCard";
 import { DataBackupCard } from "@/components/settings/DataBackupCard";
 import { UserManagementCard } from "@/components/settings/UserManagementCard";
@@ -11,7 +12,7 @@ import { usePermissions } from "@/lib/auth/usePermissions";
 import { moneyFull } from "@/lib/format";
 
 export default function SettingsPage() {
-  const { fund, asOf } = useDesk();
+  const { fund, asOf, setAsOf } = useDesk();
   const { source, metrics, cashPosition } = useBook();
   const { isAdmin, canFundReset } = usePermissions();
 
@@ -42,8 +43,15 @@ export default function SettingsPage() {
           </div>
           <div>
             <dt className="text-[10px] uppercase text-[hsl(var(--muted-foreground))]">估值日 / NAV</dt>
-            <dd>
-              {asOf} · {moneyFull(metrics.officialNav || metrics.aum, fund.ccy)}
+            <dd className="flex flex-wrap items-center gap-2">
+              <Input
+                type="date"
+                value={asOf}
+                onChange={(e) => {
+                  if (e.target.value) setAsOf(e.target.value);
+                }}
+              />
+              <span>{moneyFull(metrics.officialNav || metrics.aum, fund.ccy)}</span>
             </dd>
           </div>
           <div>

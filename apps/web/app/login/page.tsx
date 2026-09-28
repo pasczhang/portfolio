@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { useDesk } from "@/components/layout/DeskProvider";
 import { Toast } from "@/components/dashboard/Toast";
+import { LocalDataNotice } from "@/components/persist/LocalDataNotice";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -126,6 +127,7 @@ export default function LoginPage() {
             )}
           </Button>
         </form>
+        <LocalDataNotice className="mt-3" />
       </div>
       <Toast message={toast} tone="error" />
     </div>

@@ -27,6 +27,7 @@ import { useAuth } from "@/lib/auth/AuthProvider";
 import { ROLE_LABEL } from "@/lib/auth/users";
 import { ChangePasswordModal } from "@/components/auth/ChangePasswordModal";
 import { CenteredModal } from "@/components/ui/CenteredModal";
+import { LocalDataNotice } from "@/components/persist/LocalDataNotice";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { num } from "@/lib/format";
@@ -263,6 +264,7 @@ export function GlobalHeader() {
               <p className="mt-1 font-mono text-[10px] text-[hsl(var(--muted-foreground))]">
                 {fund.code} · {fund.ccy}
               </p>
+              <LocalDataNotice compact className="mt-2" />
               <Link
                 href="/settings"
                 className="mt-2 block rounded px-1 py-1 text-amber-400 hover:bg-[hsl(var(--muted))]"

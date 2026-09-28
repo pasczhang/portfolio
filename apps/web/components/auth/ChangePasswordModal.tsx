@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { CenteredModal } from "@/components/ui/CenteredModal";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { useFormDirty } from "@/lib/persist/dirty";
+import { LocalDataNotice } from "@/components/persist/LocalDataNotice";
 
 export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const { updatePassword } = useAuth();
@@ -86,6 +87,7 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
           />
         </label>
         {error ? <p className="text-[12px] text-red-400">{error}</p> : null}
+        <LocalDataNotice />
         <div className="mt-1 flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={onClose}>
             取消
